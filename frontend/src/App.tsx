@@ -9,6 +9,8 @@ import { Repos } from "./pages/Repos";
 import { Tasks } from "./pages/Tasks";
 import { TaskDetail } from "./pages/TaskDetail";
 import { SettingsPage } from "./pages/Settings";
+import { Scans } from "./pages/Scans";
+import { Activity } from "./pages/Activity";
 
 const queryClient = new QueryClient();
 
@@ -31,6 +33,8 @@ function AppRoutes() {
         <Route path="/repos" element={<Repos />} />
         <Route path="/tasks" element={<Tasks />} />
         <Route path="/tasks/:id" element={<TaskDetail />} />
+        <Route path="/scans" element={<Scans />} />
+        <Route path="/activity" element={<Activity />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" />} />
