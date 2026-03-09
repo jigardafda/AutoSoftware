@@ -51,7 +51,7 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
       },
     });
 
-    await schedulerService.scheduleRepoScan(repo.id, repo.scanInterval);
+    await schedulerService.triggerScan(repo.id);
 
     return reply.code(201).send({ data: repo });
   });

@@ -45,4 +45,15 @@ export const api = {
     list: () => request<any[]>("/scans"),
     get: (id: string) => request<any>(`/scans/${id}`),
   },
+  ai: {
+    command: (text: string) =>
+      request<any>("/ai/command", { method: "POST", body: JSON.stringify({ text }) }),
+    insights: () => request<any[]>("/ai/insights"),
+  },
+  activity: {
+    list: (params?: Record<string, string>) => {
+      const qs = params ? `?${new URLSearchParams(params)}` : "";
+      return request<any[]>(`/activity${qs}`);
+    },
+  },
 };

@@ -9,6 +9,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "@autosoftware/shared": "*",
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.2.0",

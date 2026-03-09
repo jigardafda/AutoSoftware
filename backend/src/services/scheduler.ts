@@ -28,20 +28,17 @@ export const schedulerService = {
   },
 
   async scheduleRepoScan(repoId: string, intervalMinutes: number) {
-    const scheduleId = `scan-${repoId}`;
-    await boss.unschedule(scheduleId).catch(() => {});
-
-    await boss.schedule(
-      scheduleId,
-      `*/${intervalMinutes} * * * *`,
-      { repoId },
-      { name: JOB_NAMES.REPO_SCAN }
-    );
+    await boss.send(JOB_NAMES.REPO_SCAN, { repoId }, {
+      retryLimit: 3,
+      retryBackoff: true,
+      expireInMinutes: 30,
+      singletonKey: `scan-${repoId}`,
+      startAfter: intervalMinutes * 60,
+    });
   },
 
-  async cancelRepoScan(repoId: string) {
-    const scheduleId = `scan-${repoId}`;
-    await boss.unschedule(scheduleId).catch(() => {});
+  async cancelRepoScan(_repoId: string) {
+    // Jobs with singletonKey will naturally not be re-queued if repo is deactivated
   },
 
   async triggerScan(repoId: string) {

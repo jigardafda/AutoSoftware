@@ -60,9 +60,11 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  accounts     Account[]
-  repositories Repository[]
-  tasks        Task[]
+  accounts       Account[]
+  repositories   Repository[]
+  tasks          Task[]
+  aiInsights     AiInsight[]
+  activityEvents ActivityEvent[]
 }
 
 model Account {
@@ -137,4 +139,29 @@ model ScanResult {
   analysisData Json       @default("{}")
 
   repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+}
+
+model AiInsight {
+  id          String    @id @default(cuid())
+  userId      String
+  type        String    // "suggestion" | "trend" | "alert"
+  title       String
+  description String
+  metadata    Json      @default("{}")
+  dismissed   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ActivityEvent {
+  id         String   @id @default(cuid())
+  userId     String
+  type       String   // "scan_started" | "scan_completed" | "task_created" | "task_completed" | "pr_opened"
+  entityId   String?
+  entityType String?  // "repository" | "task" | "scan"
+  title      String
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
