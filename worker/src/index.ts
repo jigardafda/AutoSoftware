@@ -1,4 +1,4 @@
-import PgBoss from "pg-boss";
+import { PgBoss } from "pg-boss";
 import { config } from "./config.js";
 import { handleRepoScan } from "./handlers/scan.js";
 import { handleTaskExecution } from "./handlers/execute.js";

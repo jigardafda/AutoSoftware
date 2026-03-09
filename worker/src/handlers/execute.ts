@@ -1,5 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { PrismaClient } from "../../../generated/prisma/client.js";
+import { prisma } from "../db.js";
 import { simpleGit } from "simple-git";
 import { cloneOrPullRepo, createWorktree, cleanupWorktree } from "../services/repo-manager.js";
 import { createPullRequest } from "./pr-creator.js";

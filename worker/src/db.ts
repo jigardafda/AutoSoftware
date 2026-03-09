@@ -2,7 +2,5 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { config } from "./config.js";
 
 const adapter = new PrismaPg({ connectionString: config.databaseUrl });
-
-// Prisma 7 requires dynamic import for generated client with custom output
 const prismaModule = await import("../../generated/prisma/client.ts");
 export const prisma = new prismaModule.PrismaClient({ adapter });

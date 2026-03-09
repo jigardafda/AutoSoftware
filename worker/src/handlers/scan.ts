@@ -1,9 +1,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { PrismaClient } from "../../../generated/prisma/client.js";
+import { prisma } from "../db.js";
 import { cloneOrPullRepo } from "../services/repo-manager.js";
 import { config } from "../config.js";
-
-const prisma = new PrismaClient();
 
 interface ScanTask {
   title: string;
