@@ -1,113 +1,204 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "../lib/api";
-import { useAuth } from "../lib/auth";
-import { GitFork, Plus, Scan, Trash2, ToggleLeft, ToggleRight, Loader2, Check } from "lucide-react";
+import { GitFork, LayoutGrid, List, Plus } from "lucide-react";
+import { api } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { RepoTable } from "@/components/repos/RepoTable";
+import { RepoCard } from "@/components/repos/RepoCard";
+import { ConnectRepoDialog } from "@/components/repos/ConnectRepoDialog";
+import { RepoDetailDrawer } from "@/components/repos/RepoDetailDrawer";
+import { cn } from "@/lib/utils";
+
+type ViewMode = "table" | "grid";
 
 export function Repos() {
-  const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [showConnect, setShowConnect] = useState(false);
-  const [selectedProvider, setSelectedProvider] = useState<string>("");
+  const [viewMode, setViewMode] = useState<ViewMode>("table");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [drawerRepo, setDrawerRepo] = useState<any | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const { data: repos, isLoading } = useQuery({ queryKey: ["repos"], queryFn: api.repos.list });
-  const { data: availableRepos, isLoading: loadingAvailable } = useQuery({
-    queryKey: ["available-repos", selectedProvider],
-    queryFn: () => api.repos.available(selectedProvider),
-    enabled: !!selectedProvider,
+  const { data: repos = [], isLoading } = useQuery({
+    queryKey: ["repos"],
+    queryFn: api.repos.list,
   });
 
-  const connectMutation = useMutation({
-    mutationFn: api.repos.connect,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["repos"] }),
-  });
   const scanMutation = useMutation({
     mutationFn: (id: string) => api.repos.scan(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["repos"] }),
   });
+
   const toggleMutation = useMutation({
-    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) => api.repos.update(id, { isActive }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["repos"] }),
-  });
-  const deleteMutation = useMutation({
-    mutationFn: api.repos.delete,
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
+      api.repos.update(id, { isActive }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["repos"] }),
   });
 
-  const connectedIds = new Set((repos || []).map((r: any) => `${r.provider}:${r.providerRepoId}`));
+  const deleteMutation = useMutation({
+    mutationFn: api.repos.delete,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["repos"] });
+      setDrawerOpen(false);
+      setDrawerRepo(null);
+    },
+  });
+
+  // Selection handlers
+  const handleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === repos.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(repos.map((r: any) => r.id)));
+    }
+  };
+
+  const handleDeselectAll = () => setSelectedIds(new Set());
+
+  const handleScanSelected = () => {
+    for (const id of selectedIds) {
+      scanMutation.mutate(id);
+    }
+    setSelectedIds(new Set());
+  };
+
+  const handleRowClick = (repo: any) => {
+    setDrawerRepo(repo);
+    setDrawerOpen(true);
+  };
 
   return (
     <div>
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-white">Repositories</h2>
-        <button onClick={() => setShowConnect(!showConnect)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors">
-          <Plus size={16} /> Connect Repository
-        </button>
+        <h2 className="text-2xl font-bold">Repositories</h2>
+        <div className="flex items-center gap-2">
+          {/* View toggle */}
+          <div className="flex items-center border rounded-md">
+            <Button
+              variant={viewMode === "table" ? "secondary" : "ghost"}
+              size="icon"
+              className={cn("h-8 w-8 rounded-r-none")}
+              onClick={() => setViewMode("table")}
+            >
+              <List className="h-4 w-4" />
+              <span className="sr-only">Table view</span>
+            </Button>
+            <Button
+              variant={viewMode === "grid" ? "secondary" : "ghost"}
+              size="icon"
+              className={cn("h-8 w-8 rounded-l-none")}
+              onClick={() => setViewMode("grid")}
+            >
+              <LayoutGrid className="h-4 w-4" />
+              <span className="sr-only">Grid view</span>
+            </Button>
+          </div>
+
+          <Button onClick={() => setConnectOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Connect Repository
+          </Button>
+        </div>
       </div>
 
-      {showConnect && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 mb-6">
-          <div className="flex gap-2 mb-4">
-            {(user?.providers || []).map((p: string) => (
-              <button key={p} onClick={() => setSelectedProvider(p)} className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${selectedProvider === p ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-400 hover:text-white"}`}>
-                {p}
-              </button>
-            ))}
-          </div>
-          {loadingAvailable && <p className="text-zinc-400 text-sm">Loading repositories...</p>}
-          {availableRepos && (
-            <div className="max-h-64 overflow-y-auto space-y-1">
-              {availableRepos.map((repo: any) => {
-                const isConnected = connectedIds.has(`${selectedProvider}:${repo.id}`);
-                return (
-                  <div key={repo.id} className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-zinc-800">
-                    <div>
-                      <p className="text-sm text-white">{repo.fullName}</p>
-                      <p className="text-xs text-zinc-500">{repo.description || "No description"}</p>
-                    </div>
-                    {isConnected ? (
-                      <span className="text-xs text-green-400 flex items-center gap-1"><Check size={14} /> Connected</span>
-                    ) : (
-                      <button onClick={() => connectMutation.mutate({ provider: selectedProvider as any, providerRepoId: repo.id, fullName: repo.fullName, cloneUrl: repo.cloneUrl, defaultBranch: repo.defaultBranch })} className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded transition-colors">Connect</button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+      {/* Bulk actions bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 mb-4 rounded-lg border bg-muted/50 px-4 py-2">
+          <span className="text-sm font-medium">
+            {selectedIds.size} selected
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7"
+            onClick={handleScanSelected}
+          >
+            Scan Selected
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7"
+            onClick={handleDeselectAll}
+          >
+            Deselect All
+          </Button>
         </div>
       )}
 
-      {isLoading ? <p className="text-zinc-400">Loading...</p> : (repos || []).length === 0 ? (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-8 text-center">
-          <GitFork size={32} className="mx-auto text-zinc-600 mb-3" />
-          <p className="text-zinc-400">No repositories connected yet.</p>
+      {/* Content */}
+      {isLoading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-8 w-full" />
+          ))}
         </div>
+      ) : repos.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-xl border bg-card p-12 text-center">
+          <GitFork className="h-10 w-10 text-muted-foreground mb-3" />
+          <h3 className="text-lg font-semibold mb-1">No repositories connected</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Connect a repository to start scanning for tasks.
+          </p>
+          <Button onClick={() => setConnectOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Connect Repository
+          </Button>
+        </div>
+      ) : viewMode === "table" ? (
+        <RepoTable
+          repos={repos}
+          selectedIds={selectedIds}
+          onSelect={handleSelect}
+          onSelectAll={handleSelectAll}
+          onScan={(id) => scanMutation.mutate(id)}
+          onToggle={(id, isActive) => toggleMutation.mutate({ id, isActive })}
+          onDelete={(id) => {
+            if (confirm("Are you sure you want to delete this repository?")) {
+              deleteMutation.mutate(id);
+            }
+          }}
+          onRowClick={handleRowClick}
+        />
       ) : (
-        <div className="space-y-3">
-          {(repos || []).map((repo: any) => (
-            <div key={repo.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-4">
-              <GitFork size={20} className="text-zinc-400" />
-              <div className="flex-1">
-                <p className="text-white font-medium">{repo.fullName}</p>
-                <div className="flex items-center gap-3 text-xs text-zinc-500 mt-1">
-                  <span>{repo.provider}</span>
-                  <span>Scan every {repo.scanInterval}m</span>
-                  {repo.lastScannedAt && <span>Last: {new Date(repo.lastScannedAt).toLocaleString()}</span>}
-                  {repo.status === "scanning" && <span className="text-purple-400 flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Scanning</span>}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => scanMutation.mutate(repo.id)} className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg" title="Trigger scan"><Scan size={16} /></button>
-                <button onClick={() => toggleMutation.mutate({ id: repo.id, isActive: !repo.isActive })} className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg" title={repo.isActive ? "Pause" : "Resume"}>
-                  {repo.isActive ? <ToggleRight size={16} className="text-green-400" /> : <ToggleLeft size={16} />}
-                </button>
-                <button onClick={() => { if (confirm("Disconnect this repository?")) deleteMutation.mutate(repo.id); }} className="p-2 text-zinc-400 hover:text-red-400 hover:bg-zinc-800 rounded-lg" title="Disconnect"><Trash2 size={16} /></button>
-              </div>
-            </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {repos.map((repo: any) => (
+            <RepoCard
+              key={repo.id}
+              repo={repo}
+              onScan={(id) => scanMutation.mutate(id)}
+              onToggle={(id, isActive) => toggleMutation.mutate({ id, isActive })}
+              onClick={handleRowClick}
+            />
           ))}
         </div>
       )}
+
+      {/* Connect Repository Dialog */}
+      <ConnectRepoDialog open={connectOpen} onOpenChange={setConnectOpen} />
+
+      {/* Repo Detail Drawer */}
+      <RepoDetailDrawer
+        repo={drawerRepo}
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        onScan={(id) => scanMutation.mutate(id)}
+        onDelete={(id) => deleteMutation.mutate(id)}
+      />
     </div>
   );
 }
