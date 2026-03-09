@@ -1,7 +1,12 @@
 {
   "name": "autosoftware",
   "private": true,
-  "workspaces": ["packages/*", "backend", "worker", "frontend"],
+  "workspaces": [
+    "packages/*",
+    "backend",
+    "worker",
+    "frontend"
+  ],
   "scripts": {
     "dev:backend": "npm run dev -w backend",
     "dev:worker": "npm run dev -w worker",
@@ -9,5 +14,12 @@
     "db:migrate": "npx prisma migrate dev",
     "db:generate": "npx prisma generate",
     "build": "npm run build -w packages/shared && npm run build -w backend && npm run build -w worker"
+  },
+  "devDependencies": {
+    "prisma": "^7.4.2"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.4.2",
+    "dotenv": "^17.3.1"
   }
 }
