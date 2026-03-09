@@ -2,16 +2,16 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import {
-  Loader2,
   CheckCircle2,
   XCircle,
-  ScanSearch,
+  Search,
   Github,
   GitlabIcon,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -21,6 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/EmptyState";
 
 function timeAgo(date: string) {
   const seconds = Math.floor(
@@ -70,8 +71,20 @@ export function Scans() {
     return (
       <div className="space-y-4">
         <h2 className="text-lg font-semibold">Scan History</h2>
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <div className="rounded-md border">
+          <div className="border-b px-4 py-3">
+            <Skeleton className="h-4 w-full max-w-lg" />
+          </div>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-4 border-b px-4 py-3 last:border-0">
+              <Skeleton className="h-4 w-4" />
+              <Skeleton className="h-4 w-36" />
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-5 w-20 rounded-full" />
+              <Skeleton className="h-4 w-12" />
+              <Skeleton className="h-4 w-32 ml-auto" />
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -81,12 +94,11 @@ export function Scans() {
     return (
       <div className="space-y-4">
         <h2 className="text-lg font-semibold">Scan History</h2>
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <ScanSearch className="h-12 w-12 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground text-sm">
-            No scans yet. Connect a repository and trigger a scan.
-          </p>
-        </div>
+        <EmptyState
+          icon={Search}
+          title="No scans yet"
+          description="Connect a repository and trigger your first scan"
+        />
       </div>
     );
   }
@@ -100,7 +112,7 @@ export function Scans() {
         </Badge>
       </div>
 
-      <div className="rounded-md border">
+      <div className="overflow-x-auto rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -121,9 +133,9 @@ export function Scans() {
                   onClick={() => toggleExpand(scan.id)}
                 >
                   <TableCell>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
                       <ProviderIcon provider={scan.repository?.provider} />
-                      <span className="font-medium text-sm">
+                      <span className="font-medium text-sm truncate">
                         {scan.repository?.fullName || "Unknown"}
                       </span>
                     </div>

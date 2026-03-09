@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { GitFork, LayoutGrid, List, Plus } from "lucide-react";
+import { GitBranch, LayoutGrid, List, Plus } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,6 +9,7 @@ import { RepoTable } from "@/components/repos/RepoTable";
 import { RepoCard } from "@/components/repos/RepoCard";
 import { ConnectRepoDialog } from "@/components/repos/ConnectRepoDialog";
 import { RepoDetailDrawer } from "@/components/repos/RepoDetailDrawer";
+import { EmptyState } from "@/components/EmptyState";
 import { cn } from "@/lib/utils";
 
 type ViewMode = "table" | "grid";
@@ -101,7 +102,7 @@ export function Repos() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between gap-2 mb-6 flex-wrap">
         <h2 className="text-2xl font-bold">Repositories</h2>
         <div className="flex items-center gap-2">
           {/* View toggle */}
@@ -128,7 +129,8 @@ export function Repos() {
 
           <Button onClick={() => setConnectOpen(true)}>
             <Plus className="h-4 w-4" />
-            Connect Repository
+            <span className="hidden sm:inline">Connect Repository</span>
+            <span className="sm:hidden">Connect</span>
           </Button>
         </div>
       </div>
@@ -160,23 +162,33 @@ export function Repos() {
 
       {/* Content */}
       {isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-8 w-full" />
+        <div className="rounded-md border">
+          <div className="border-b px-4 py-3">
+            <Skeleton className="h-4 w-full max-w-md" />
+          </div>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-4 border-b px-4 py-3 last:border-0">
+              <Skeleton className="h-4 w-4" />
+              <Skeleton className="h-4 w-40" />
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-4 w-24 ml-auto" />
+              <Skeleton className="h-5 w-16 rounded-full" />
+              <Skeleton className="h-8 w-8 rounded" />
+            </div>
           ))}
         </div>
       ) : repos.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border bg-card p-12 text-center">
-          <GitFork className="h-10 w-10 text-muted-foreground mb-3" />
-          <h3 className="text-lg font-semibold mb-1">No repositories connected</h3>
-          <p className="text-sm text-muted-foreground mb-4">
-            Connect a repository to start scanning for tasks.
-          </p>
-          <Button onClick={() => setConnectOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Connect Repository
-          </Button>
-        </div>
+        <EmptyState
+          icon={GitBranch}
+          title="No repositories connected"
+          description="Connect your first repository to get started"
+          action={
+            <Button onClick={() => setConnectOpen(true)}>
+              <Plus className="h-4 w-4 mr-1" />
+              Connect Repository
+            </Button>
+          }
+        />
       ) : viewMode === "table" ? (
         <RepoTable
           repos={repos}

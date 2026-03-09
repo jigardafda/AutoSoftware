@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 function getInitials(name: string | null | undefined): string {
@@ -238,7 +239,56 @@ function ApiTab() {
   );
 }
 
+function SettingsSkeleton() {
+  return (
+    <div className="space-y-4">
+      <Skeleton className="h-6 w-24" />
+      <Skeleton className="h-9 w-72" />
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-5 w-16" />
+          <Skeleton className="h-4 w-48" />
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-16 w-16 rounded-full" />
+            <div className="space-y-2">
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-4 w-48" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-4 w-64" />
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex items-center justify-between py-2">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-5 w-5" />
+                  <Skeleton className="h-4 w-20" />
+                </div>
+                <Skeleton className="h-6 w-24 rounded-full" />
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export function SettingsPage() {
+  const { loading } = useAuth();
+
+  if (loading) {
+    return <SettingsSkeleton />;
+  }
+
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Settings</h2>

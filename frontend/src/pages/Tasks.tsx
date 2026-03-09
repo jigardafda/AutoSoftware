@@ -3,12 +3,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { Plus, Loader2 } from "lucide-react";
+import { Plus, Loader2, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { TaskFilters } from "@/components/tasks/TaskFilters";
 import { TaskTable } from "@/components/tasks/TaskTable";
 import { CreateTaskSheet } from "@/components/tasks/CreateTaskSheet";
+import { EmptyState } from "@/components/EmptyState";
 
 export function Tasks() {
   const navigate = useNavigate();
@@ -142,9 +144,41 @@ export function Tasks() {
 
       {/* Table */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <div className="space-y-3">
+          {/* Skeleton filter bar */}
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-8 w-28" />
+            <Skeleton className="h-8 w-28" />
+            <Skeleton className="h-8 w-28" />
+          </div>
+          {/* Skeleton table rows */}
+          <div className="rounded-md border">
+            <div className="border-b px-4 py-3">
+              <Skeleton className="h-4 w-full max-w-lg" />
+            </div>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 border-b px-4 py-3 last:border-0">
+                <Skeleton className="h-4 w-4" />
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-5 w-16 rounded-full" />
+                <Skeleton className="h-5 w-16 rounded-full" />
+                <Skeleton className="h-4 w-24 ml-auto" />
+              </div>
+            ))}
+          </div>
         </div>
+      ) : tasks.length === 0 ? (
+        <EmptyState
+          icon={CheckCircle2}
+          title="No tasks yet"
+          description="Tasks will appear when you scan repositories or create them manually"
+          action={
+            <Button size="sm" onClick={() => setSheetOpen(true)}>
+              <Plus className="h-4 w-4 mr-1" />
+              Create Task
+            </Button>
+          }
+        />
       ) : (
         <TaskTable
           tasks={tasks}

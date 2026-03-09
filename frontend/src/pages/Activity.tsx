@@ -13,7 +13,9 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { EmptyState } from "@/components/EmptyState";
 
 type FilterType = "all" | "created" | "completed" | "failed" | "in_progress";
 
@@ -147,18 +149,30 @@ export function Activity() {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className="flex items-start gap-4 p-4">
+                <Skeleton className="h-5 w-5 rounded-full mt-0.5" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-48" />
+                  <Skeleton className="h-3 w-72" />
+                </div>
+                <Skeleton className="h-3 w-16" />
+              </CardContent>
+            </Card>
+          ))}
         </div>
       ) : filteredEvents.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <ActivityIcon className="h-12 w-12 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground text-sm">
-            {filter === "all"
-              ? "No activity yet. Create tasks to see activity here."
-              : `No ${filter.replace("_", " ")} events found.`}
-          </p>
-        </div>
+        <EmptyState
+          icon={ActivityIcon}
+          title="No activity yet"
+          description={
+            filter === "all"
+              ? "Activity will appear as you use the platform"
+              : `No ${filter.replace("_", " ")} events found.`
+          }
+        />
       ) : (
         <ScrollArea className="h-[calc(100vh-220px)]">
           <div className="space-y-3 pr-4">
