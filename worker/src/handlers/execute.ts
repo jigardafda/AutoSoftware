@@ -5,8 +5,6 @@ import { cloneOrPullRepo, createWorktree, cleanupWorktree } from "../services/re
 import { createPullRequest } from "./pr-creator.js";
 import { config } from "../config.js";
 
-const prisma = new PrismaClient();
-
 export async function handleTaskExecution(job: { data: { taskId: string } }) {
   const { taskId } = job.data;
   console.log(`Starting execution for task ${taskId}`);

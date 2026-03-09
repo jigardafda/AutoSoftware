@@ -14,6 +14,10 @@ boss.on("error", (err) => console.error("pg-boss error:", err));
 await boss.start();
 console.log("Worker started, listening for jobs...");
 
+// Ensure queues exist before registering workers
+await boss.createQueue(JOB_NAMES.REPO_SCAN);
+await boss.createQueue(JOB_NAMES.TASK_EXECUTE);
+
 await boss.work(JOB_NAMES.REPO_SCAN, { teamConcurrency: 2 }, handleRepoScan as any);
 await boss.work(JOB_NAMES.TASK_EXECUTE, { teamConcurrency: 1 }, handleTaskExecution as any);
 

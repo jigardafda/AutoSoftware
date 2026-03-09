@@ -11,6 +11,10 @@ export const schedulerService = {
     await boss.start();
     console.log("pg-boss scheduler started");
 
+    // Ensure queues exist
+    await boss.createQueue(JOB_NAMES.REPO_SCAN);
+    await boss.createQueue(JOB_NAMES.TASK_EXECUTE);
+
     const activeRepos = await prisma.repository.findMany({
       where: { isActive: true },
     });

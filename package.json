@@ -8,6 +8,7 @@
     "frontend"
   ],
   "scripts": {
+    "dev": "concurrently -n backend,worker,frontend -c blue,magenta,green \"npm run dev:backend\" \"npm run dev:worker\" \"npm run dev:frontend\"",
     "dev:backend": "npm run dev -w backend",
     "dev:worker": "npm run dev -w worker",
     "dev:frontend": "npm run dev -w frontend",
@@ -16,6 +17,7 @@
     "build": "npm run build -w packages/shared && npm run build -w backend && npm run build -w worker"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "prisma": "^7.4.2"
   },
   "dependencies": {
