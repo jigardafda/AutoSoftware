@@ -11,6 +11,8 @@ import { TaskDetail } from "./pages/TaskDetail";
 import { SettingsPage } from "./pages/Settings";
 import { Scans } from "./pages/Scans";
 import { Activity } from "./pages/Activity";
+import { CommandPalette } from "./components/CommandPalette";
+import { Toaster } from "./components/ui/sonner";
 
 const queryClient = new QueryClient();
 
@@ -26,19 +28,22 @@ function AppRoutes() {
   if (loading) return null;
 
   return (
-    <Routes>
-      <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
-      <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/repos" element={<Repos />} />
-        <Route path="/tasks" element={<Tasks />} />
-        <Route path="/tasks/:id" element={<TaskDetail />} />
-        <Route path="/scans" element={<Scans />} />
-        <Route path="/activity" element={<Activity />} />
-        <Route path="/settings" element={<SettingsPage />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/dashboard" />} />
-    </Routes>
+    <>
+      <CommandPalette />
+      <Routes>
+        <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
+        <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/repos" element={<Repos />} />
+          <Route path="/tasks" element={<Tasks />} />
+          <Route path="/tasks/:id" element={<TaskDetail />} />
+          <Route path="/scans" element={<Scans />} />
+          <Route path="/activity" element={<Activity />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/dashboard" />} />
+      </Routes>
+    </>
   );
 }
 
@@ -50,6 +55,7 @@ export default function App() {
           <BrowserRouter>
             <AppRoutes />
           </BrowserRouter>
+          <Toaster richColors />
         </AuthProvider>
       </QueryClientProvider>
     </ThemeProvider>
