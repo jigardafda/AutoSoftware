@@ -2,6 +2,7 @@ import { Outlet } from "react-router-dom";
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
 import { MobileNav } from "@/components/MobileNav";
+import { AiChat } from "@/components/AiChat";
 
 export function Layout() {
   return (
@@ -21,6 +22,9 @@ export function Layout() {
         {/* Mobile bottom nav */}
         <MobileNav />
       </div>
+
+      {/* AI Chat drawer */}
+      <AiChat />
     </div>
   );
 }

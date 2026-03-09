@@ -10,6 +10,7 @@ import {
   GitBranch,
   CheckCircle2,
   Activity,
+  MessageSquare,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,12 @@ import {
 } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const routeTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -111,6 +118,26 @@ export function Header() {
             <span className="text-xs">⌘</span>K
           </kbd>
         </Button>
+
+        {/* AI Chat button */}
+        <TooltipProvider delayDuration={0}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => window.dispatchEvent(new Event("open-ai-chat"))}
+              >
+                <MessageSquare className="h-4 w-4" />
+                <span className="sr-only">AI Chat</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>AI Chat ({"\u2318"}J)</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
         {/* Theme toggle */}
         <ThemeToggle />
