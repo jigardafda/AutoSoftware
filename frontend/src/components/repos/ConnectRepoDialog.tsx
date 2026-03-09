@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Search, Loader2, Check } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -49,6 +50,10 @@ export function ConnectRepoDialog({ open, onOpenChange }: ConnectRepoDialogProps
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["repos"] });
       queryClient.invalidateQueries({ queryKey: ["available-repos"] });
+      toast.success("Repository connected successfully");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to connect repository");
     },
   });
 

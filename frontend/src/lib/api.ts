@@ -49,6 +49,8 @@ export const api = {
     command: (text: string) =>
       request<any>("/ai/command", { method: "POST", body: JSON.stringify({ text }) }),
     insights: () => request<any[]>("/ai/insights"),
+    dismissInsight: (id: string) =>
+      request<any>(`/ai/insights/${id}/dismiss`, { method: "POST" }),
   },
   activity: {
     list: (params?: Record<string, string>) => {

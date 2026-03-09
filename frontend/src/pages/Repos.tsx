@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { GitFork, LayoutGrid, List, Plus } from "lucide-react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -27,13 +28,26 @@ export function Repos() {
 
   const scanMutation = useMutation({
     mutationFn: (id: string) => api.repos.scan(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["repos"] }),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ["repos"] });
+      const repo = repos.find((r: any) => r.id === id);
+      toast.success(`Scan triggered for ${repo?.fullName ?? "repository"}`);
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to trigger scan");
+    },
   });
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
       api.repos.update(id, { isActive }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["repos"] }),
+    onSuccess: (_data, { isActive }) => {
+      queryClient.invalidateQueries({ queryKey: ["repos"] });
+      toast.success(`Repository ${isActive ? "activated" : "paused"}`);
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to update repository");
+    },
   });
 
   const deleteMutation = useMutation({
@@ -42,6 +56,10 @@ export function Repos() {
       queryClient.invalidateQueries({ queryKey: ["repos"] });
       setDrawerOpen(false);
       setDrawerRepo(null);
+      toast.success("Repository deleted");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to delete repository");
     },
   });
 

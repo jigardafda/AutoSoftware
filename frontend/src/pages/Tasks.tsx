@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Plus, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,10 @@ export function Tasks() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       setSelectedIds(new Set());
+      toast.success("Task cancelled");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to cancel task");
     },
   });
 

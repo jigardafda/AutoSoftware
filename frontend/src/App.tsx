@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ThemeProvider } from "./lib/theme";
+import { ThemeProvider, useTheme } from "./lib/theme";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { Layout } from "./components/Layout";
 import { Login } from "./pages/Login";
@@ -47,6 +47,11 @@ function AppRoutes() {
   );
 }
 
+function ThemedToaster() {
+  const { resolvedTheme } = useTheme();
+  return <Toaster richColors theme={resolvedTheme} />;
+}
+
 export default function App() {
   return (
     <ThemeProvider>
@@ -55,7 +60,7 @@ export default function App() {
           <BrowserRouter>
             <AppRoutes />
           </BrowserRouter>
-          <Toaster richColors />
+          <ThemedToaster />
         </AuthProvider>
       </QueryClientProvider>
     </ThemeProvider>
