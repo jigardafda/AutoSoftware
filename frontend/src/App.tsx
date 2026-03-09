@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Loader2 } from "lucide-react";
 import { ThemeProvider, useTheme } from "./lib/theme";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { Layout } from "./components/Layout";
@@ -18,7 +19,11 @@ const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="min-h-screen bg-zinc-950 flex items-center justify-center text-white">Loading...</div>;
+  if (loading) return (
+    <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+    </div>
+  );
   if (!user) return <Navigate to="/login" />;
   return <>{children}</>;
 }

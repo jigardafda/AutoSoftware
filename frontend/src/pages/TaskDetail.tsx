@@ -126,7 +126,7 @@ function TaskDetailSkeleton() {
     <div className="space-y-6">
       <Skeleton className="h-5 w-32" />
       <div className="space-y-3">
-        <Skeleton className="h-8 w-96" />
+        <Skeleton className="h-8 w-full max-w-96" />
         <div className="flex gap-2">
           <Skeleton className="h-5 w-20" />
           <Skeleton className="h-5 w-20" />
@@ -261,12 +261,14 @@ export function TaskDetail() {
 
       {/* Tabs */}
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="agent-log">Agent Log</TabsTrigger>
-          <TabsTrigger value="pull-request">Pull Request</TabsTrigger>
-          <TabsTrigger value="commits">Commits</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto">
+          <TabsList>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="agent-log">Agent Log</TabsTrigger>
+            <TabsTrigger value="pull-request">Pull Request</TabsTrigger>
+            <TabsTrigger value="commits">Commits</TabsTrigger>
+          </TabsList>
+        </div>
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-4">
@@ -404,6 +406,7 @@ export function TaskDetail() {
             </CardHeader>
             <CardContent>
               {metadata.commits && metadata.commits.length > 0 ? (
+                <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -426,6 +429,7 @@ export function TaskDetail() {
                     )}
                   </TableBody>
                 </Table>
+                </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
                   No commits yet.

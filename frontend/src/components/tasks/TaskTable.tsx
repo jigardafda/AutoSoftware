@@ -91,7 +91,7 @@ export function TaskTable({
   const someSelected = selectedIds.size > 0 && !allSelected;
 
   return (
-    <div className="rounded-md border">
+    <div className="overflow-x-auto rounded-md border">
       <Table>
         <TableHeader>
           <TableRow>

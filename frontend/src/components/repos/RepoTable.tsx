@@ -94,6 +94,7 @@ export function RepoTable({
   const allSelected = repos.length > 0 && selectedIds.size === repos.length;
 
   return (
+    <div className="overflow-x-auto rounded-md border">
     <Table>
       <TableHeader>
         <TableRow>
@@ -196,5 +197,6 @@ export function RepoTable({
         ))}
       </TableBody>
     </Table>
+    </div>
   );
 }
