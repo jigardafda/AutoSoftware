@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
+import { Pagination, paginate } from "@/components/Pagination";
 import {
   PlusCircle,
   CheckCircle,
@@ -14,7 +15,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { EmptyState } from "@/components/EmptyState";
 
 type FilterType = "all" | "created" | "completed" | "failed" | "in_progress";
@@ -93,6 +93,10 @@ const filterOptions: { value: FilterType; label: string }[] = [
 
 export function Activity() {
   const [filter, setFilter] = useState<FilterType>("all");
+  const [page, setPage] = useState(0);
+
+  // Reset page when filter changes
+  useEffect(() => { setPage(0); }, [filter]);
 
   const { data: tasks = [], isLoading } = useQuery({
     queryKey: ["tasks"],
@@ -120,6 +124,8 @@ export function Activity() {
     if (filter === "all") return events;
     return events.filter((e) => e.type === filter);
   }, [events, filter]);
+
+  const pagedEvents = useMemo(() => paginate(filteredEvents, page), [filteredEvents, page]);
 
   return (
     <div className="space-y-4">
@@ -174,9 +180,9 @@ export function Activity() {
           }
         />
       ) : (
-        <ScrollArea className="h-[calc(100vh-220px)]">
-          <div className="space-y-3 pr-4">
-            {filteredEvents.map((event) => (
+        <>
+          <div className="space-y-3">
+            {pagedEvents.map((event) => (
               <Link
                 key={`${event.id}-${event.status}`}
                 to={`/tasks/${event.taskId}`}
@@ -203,7 +209,8 @@ export function Activity() {
               </Link>
             ))}
           </div>
-        </ScrollArea>
+          <Pagination page={page} total={filteredEvents.length} onPageChange={setPage} />
+        </>
       )}
     </div>
   );

@@ -7,6 +7,7 @@ import {
   Activity,
   MoreHorizontal,
   Search,
+  Layers,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -78,6 +79,16 @@ export function MobileNav() {
             >
               <Search className="h-4 w-4" />
               Scans
+            </button>
+            <button
+              onClick={() => {
+                navigate("/queues");
+                setMoreOpen(false);
+              }}
+              className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent/50"
+            >
+              <Layers className="h-4 w-4" />
+              Queues
             </button>
             <button
               onClick={() => {

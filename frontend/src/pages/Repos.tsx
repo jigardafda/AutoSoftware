@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { GitBranch, LayoutGrid, List, Plus } from "lucide-react";
 import { api } from "@/lib/api";
+import { Pagination, paginate } from "@/components/Pagination";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RepoTable } from "@/components/repos/RepoTable";
@@ -16,16 +18,29 @@ type ViewMode = "table" | "grid";
 
 export function Repos() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [connectOpen, setConnectOpen] = useState(false);
   const [drawerRepo, setDrawerRepo] = useState<any | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [page, setPage] = useState(0);
 
   const { data: repos = [], isLoading } = useQuery({
     queryKey: ["repos"],
     queryFn: api.repos.list,
   });
+
+  const pagedRepos = useMemo(() => paginate(repos, page), [repos, page]);
+
+  const handleScan = (id: string) => {
+    const repo = repos.find((r: any) => r.id === id);
+    if (repo?.status === "scanning") {
+      toast.warning(`Scan already in progress for ${repo.fullName}`);
+      return;
+    }
+    scanMutation.mutate(id);
+  };
 
   const scanMutation = useMutation({
     mutationFn: (id: string) => api.repos.scan(id),
@@ -89,14 +104,13 @@ export function Repos() {
 
   const handleScanSelected = () => {
     for (const id of selectedIds) {
-      scanMutation.mutate(id);
+      handleScan(id);
     }
     setSelectedIds(new Set());
   };
 
   const handleRowClick = (repo: any) => {
-    setDrawerRepo(repo);
-    setDrawerOpen(true);
+    navigate(`/repos/${repo.id}`);
   };
 
   return (
@@ -190,32 +204,38 @@ export function Repos() {
           }
         />
       ) : viewMode === "table" ? (
-        <RepoTable
-          repos={repos}
-          selectedIds={selectedIds}
-          onSelect={handleSelect}
-          onSelectAll={handleSelectAll}
-          onScan={(id) => scanMutation.mutate(id)}
-          onToggle={(id, isActive) => toggleMutation.mutate({ id, isActive })}
-          onDelete={(id) => {
-            if (confirm("Are you sure you want to delete this repository?")) {
-              deleteMutation.mutate(id);
-            }
-          }}
-          onRowClick={handleRowClick}
-        />
+        <>
+          <RepoTable
+            repos={pagedRepos}
+            selectedIds={selectedIds}
+            onSelect={handleSelect}
+            onSelectAll={handleSelectAll}
+            onScan={handleScan}
+            onToggle={(id, isActive) => toggleMutation.mutate({ id, isActive })}
+            onDelete={(id) => {
+              if (confirm("Are you sure you want to delete this repository?")) {
+                deleteMutation.mutate(id);
+              }
+            }}
+            onRowClick={handleRowClick}
+          />
+          <Pagination page={page} total={repos.length} onPageChange={setPage} />
+        </>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {repos.map((repo: any) => (
-            <RepoCard
-              key={repo.id}
-              repo={repo}
-              onScan={(id) => scanMutation.mutate(id)}
-              onToggle={(id, isActive) => toggleMutation.mutate({ id, isActive })}
-              onClick={handleRowClick}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {pagedRepos.map((repo: any) => (
+              <RepoCard
+                key={repo.id}
+                repo={repo}
+                onScan={handleScan}
+                onToggle={(id, isActive) => toggleMutation.mutate({ id, isActive })}
+                onClick={handleRowClick}
+              />
+            ))}
+          </div>
+          <Pagination page={page} total={repos.length} onPageChange={setPage} />
+        </>
       )}
 
       {/* Connect Repository Dialog */}
@@ -226,7 +246,7 @@ export function Repos() {
         repo={drawerRepo}
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
-        onScan={(id) => scanMutation.mutate(id)}
+        onScan={handleScan}
         onDelete={(id) => deleteMutation.mutate(id)}
       />
     </div>

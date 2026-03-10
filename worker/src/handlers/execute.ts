@@ -4,8 +4,28 @@ import { simpleGit } from "simple-git";
 import { cloneOrPullRepo, createWorktree, cleanupWorktree } from "../services/repo-manager.js";
 import { createPullRequest } from "./pr-creator.js";
 import { config } from "../config.js";
+import { decrypt } from "@autosoftware/shared";
 
-export async function handleTaskExecution(job: { data: { taskId: string } }) {
+async function resolveApiKey(userId: string): Promise<{ key: string; apiKeyId: string | null }> {
+  if (config.apiKeyEncryptionSecret) {
+    const dbKey = await prisma.apiKey.findFirst({
+      where: { userId, isActive: true },
+      orderBy: { priority: "asc" },
+    });
+    if (dbKey) {
+      try {
+        const plainKey = decrypt(dbKey.encryptedKey, config.apiKeyEncryptionSecret);
+        return { key: plainKey, apiKeyId: dbKey.id };
+      } catch {
+        // Decryption failed, fall through
+      }
+    }
+  }
+  return { key: config.anthropicApiKey, apiKeyId: null };
+}
+
+export async function handleTaskExecution(jobs: { data: { taskId: string } }[]) {
+  const job = jobs[0];
   const { taskId } = job.data;
   console.log(`Starting execution for task ${taskId}`);
 
@@ -25,20 +45,26 @@ export async function handleTaskExecution(job: { data: { taskId: string } }) {
     return;
   }
 
-  // Validate API key before starting
-  if (!config.anthropicApiKey || config.anthropicApiKey === "sk-ant-xxx") {
+  const repo = task.repository;
+
+  // Resolve API key from DB or env
+  const { key: resolvedKey, apiKeyId } = await resolveApiKey(repo.userId);
+
+  if (!resolvedKey || resolvedKey === "sk-ant-xxx") {
     await prisma.task.update({
       where: { id: taskId },
       data: {
         status: "failed",
-        metadata: { error: "ANTHROPIC_API_KEY is not configured. Set a valid API key in .env to enable task execution." },
+        metadata: { error: "No API key available. Add one in Settings or set ANTHROPIC_API_KEY in .env." },
       },
     });
-    console.error("Task aborted: ANTHROPIC_API_KEY not configured");
+    console.error("Task aborted: No API key available");
     return;
   }
 
-  const repo = task.repository;
+  // Set env for Agent SDK
+  process.env.ANTHROPIC_API_KEY = resolvedKey;
+
   const account = repo.user.accounts.find((a: any) => a.provider === repo.provider);
   if (!account) {
     await prisma.task.update({
@@ -146,9 +172,35 @@ ${task.description}
       },
     });
 
+    // Record usage if using a DB key
+    if (apiKeyId) {
+      await prisma.apiKeyUsage.create({
+        data: {
+          apiKeyId,
+          model: "claude-sonnet-4-20250514",
+          inputTokens: 0,
+          outputTokens: 0,
+          estimatedCostUsd: 0,
+          source: "task",
+          sourceId: taskId,
+        },
+      });
+      await prisma.apiKey.update({
+        where: { id: apiKeyId },
+        data: { lastUsedAt: new Date(), lastError: null },
+      });
+    }
+
     console.log(`Task ${taskId} completed. PR: ${pr.url}`);
   } catch (err) {
     console.error(`Task ${taskId} failed:`, err);
+
+    if (apiKeyId) {
+      await prisma.apiKey.update({
+        where: { id: apiKeyId },
+        data: { lastError: err instanceof Error ? err.message : "Unknown error" },
+      }).catch(() => {});
+    }
 
     await prisma.task.update({
       where: { id: taskId },

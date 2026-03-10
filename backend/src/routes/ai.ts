@@ -1,10 +1,56 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "../db.js";
 import { config } from "../config.js";
+import { decrypt, estimateCost } from "@autosoftware/shared";
 import Anthropic from "@anthropic-ai/sdk";
 
-const getClient = () =>
-  new Anthropic({ apiKey: config.anthropicApiKey || process.env.ANTHROPIC_API_KEY });
+async function getClientForUser(userId: string): Promise<{ client: Anthropic; apiKeyId: string | null }> {
+  if (config.apiKeyEncryptionSecret) {
+    const dbKey = await prisma.apiKey.findFirst({
+      where: { userId, isActive: true },
+      orderBy: { priority: "asc" },
+    });
+    if (dbKey) {
+      try {
+        const plainKey = decrypt(dbKey.encryptedKey, config.apiKeyEncryptionSecret);
+        return { client: new Anthropic({ apiKey: plainKey }), apiKeyId: dbKey.id };
+      } catch {
+        // Decryption failed, fall through to env key
+      }
+    }
+  }
+  return {
+    client: new Anthropic({ apiKey: config.anthropicApiKey || process.env.ANTHROPIC_API_KEY }),
+    apiKeyId: null,
+  };
+}
+
+async function recordUsage(
+  apiKeyId: string | null,
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  source: string,
+  sourceId?: string
+) {
+  if (!apiKeyId) return;
+  const cost = estimateCost(model, inputTokens, outputTokens);
+  await prisma.apiKeyUsage.create({
+    data: {
+      apiKeyId,
+      model,
+      inputTokens,
+      outputTokens,
+      estimatedCostUsd: cost,
+      source,
+      sourceId,
+    },
+  });
+  await prisma.apiKey.update({
+    where: { id: apiKeyId },
+    data: { lastUsedAt: new Date(), lastError: null },
+  });
+}
 
 export const aiRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", (app as any).requireAuth);
@@ -15,7 +61,6 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
     if (!text)
       return reply.code(400).send({ error: { message: "text is required" } });
 
-    // Get user context
     const repos = await prisma.repository.findMany({
       where: { userId: request.userId },
       select: { id: true, fullName: true },
@@ -28,9 +73,10 @@ export const aiRoutes: FastifyPluginAsync = async (app) => {
     });
 
     try {
-      const client = getClient();
+      const { client, apiKeyId } = await getClientForUser(request.userId);
+      const model = "claude-sonnet-4-20250514";
       const response = await client.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model,
         max_tokens: 300,
         system: `You parse user commands for a code analysis tool. Given the user's repos and tasks, return a JSON action.
 
@@ -46,6 +92,14 @@ Recent tasks: ${JSON.stringify(tasks)}
 Return ONLY valid JSON, no other text.`,
         messages: [{ role: "user", content: text }],
       });
+
+      await recordUsage(
+        apiKeyId,
+        model,
+        response.usage.input_tokens,
+        response.usage.output_tokens,
+        "command"
+      );
 
       const content = response.content[0];
       if (content.type === "text") {
@@ -95,7 +149,8 @@ Return ONLY valid JSON, no other text.`,
       });
 
       try {
-        const client = getClient();
+        const { client, apiKeyId } = await getClientForUser(request.userId);
+        const model = "claude-sonnet-4-20250514";
 
         reply.raw.writeHead(200, {
           "Content-Type": "text/event-stream",
@@ -104,7 +159,7 @@ Return ONLY valid JSON, no other text.`,
         });
 
         const stream = client.messages.stream({
-          model: "claude-sonnet-4-20250514",
+          model,
           max_tokens: 1024,
           system: `You are an AI assistant for AutoSoftware, a code analysis and improvement platform. Help users understand their repositories, tasks, and scan results.
 
@@ -116,6 +171,9 @@ Be concise and helpful. Use markdown for formatting.`,
           messages: [{ role: "user", content: message }],
         });
 
+        let totalInput = 0;
+        let totalOutput = 0;
+
         for await (const event of stream) {
           if (
             event.type === "content_block_delta" &&
@@ -125,7 +183,17 @@ Be concise and helpful. Use markdown for formatting.`,
               `data: ${JSON.stringify({ text: event.delta.text })}\n\n`
             );
           }
+          if (event.type === "message_delta") {
+            totalOutput = (event as any).usage?.output_tokens || totalOutput;
+          }
         }
+
+        // Get final message for usage
+        const finalMessage = await stream.finalMessage();
+        totalInput = finalMessage.usage.input_tokens;
+        totalOutput = finalMessage.usage.output_tokens;
+
+        await recordUsage(apiKeyId, model, totalInput, totalOutput, "chat");
 
         reply.raw.write(`data: [DONE]\n\n`);
         reply.raw.end();

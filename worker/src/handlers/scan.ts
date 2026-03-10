@@ -1,7 +1,9 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "../db.js";
 import { cloneOrPullRepo } from "../services/repo-manager.js";
 import { config } from "../config.js";
+import { decrypt, estimateCost } from "@autosoftware/shared";
 
 interface ScanTask {
   title: string;
@@ -10,7 +12,26 @@ interface ScanTask {
   priority: "low" | "medium" | "high" | "critical";
 }
 
-export async function handleRepoScan(job: { data: { repoId: string } }) {
+async function resolveApiKey(userId: string): Promise<{ key: string; apiKeyId: string | null }> {
+  if (config.apiKeyEncryptionSecret) {
+    const dbKey = await prisma.apiKey.findFirst({
+      where: { userId, isActive: true },
+      orderBy: { priority: "asc" },
+    });
+    if (dbKey) {
+      try {
+        const plainKey = decrypt(dbKey.encryptedKey, config.apiKeyEncryptionSecret);
+        return { key: plainKey, apiKeyId: dbKey.id };
+      } catch {
+        // Decryption failed, fall through
+      }
+    }
+  }
+  return { key: config.anthropicApiKey, apiKeyId: null };
+}
+
+export async function handleRepoScan(jobs: { data: { repoId: string } }[]) {
+  const job = jobs[0];
   const { repoId } = job.data;
   console.log(`Starting scan for repo ${repoId}`);
 
@@ -48,13 +69,15 @@ export async function handleRepoScan(job: { data: { repoId: string } }) {
     return;
   }
 
-  // Validate API key before starting
-  if (!config.anthropicApiKey || config.anthropicApiKey === "sk-ant-xxx") {
+  // Resolve API key from DB or env
+  const { key: resolvedKey, apiKeyId } = await resolveApiKey(repo.userId);
+
+  if (!resolvedKey || resolvedKey === "sk-ant-xxx") {
     await prisma.scanResult.create({
       data: {
         repositoryId: repoId,
         status: "failed",
-        summary: "ANTHROPIC_API_KEY is not configured. Set a valid API key in .env to enable scanning.",
+        summary: "No API key available. Add one in Settings or set ANTHROPIC_API_KEY in .env.",
         analysisData: {},
       },
     });
@@ -62,9 +85,12 @@ export async function handleRepoScan(job: { data: { repoId: string } }) {
       where: { id: repoId },
       data: { status: "error" },
     });
-    console.error("Scan aborted: ANTHROPIC_API_KEY not configured");
+    console.error("Scan aborted: No API key available");
     return;
   }
+
+  // Set env for Agent SDK
+  process.env.ANTHROPIC_API_KEY = resolvedKey;
 
   await prisma.repository.update({
     where: { id: repoId },
@@ -124,8 +150,75 @@ IMPORTANT: Respond with ONLY a JSON array of tasks:
       console.error("Failed to parse scan results:", parseErr);
     }
 
+    // Semantic deduplication: use Claude to compare new tasks against existing open ones
+    const existingTasks = await prisma.task.findMany({
+      where: {
+        repositoryId: repoId,
+        status: { in: ["pending", "in_progress"] },
+      },
+      select: { id: true, title: true, description: true, type: true },
+    });
+
+    let newTasks = tasks;
+    if (existingTasks.length > 0 && tasks.length > 0) {
+      try {
+        const apiKey = process.env.ANTHROPIC_API_KEY;
+        const client = new Anthropic({ apiKey });
+        const dedupResponse = await client.messages.create({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1024,
+          system: `You are a deduplication engine. Given a list of EXISTING tasks and NEW tasks for a code repository, identify which new tasks are semantically duplicates of existing ones — i.e. they address the same underlying issue, even if worded differently.
+
+Return ONLY a JSON array of indices (0-based) of NEW tasks that are NOT duplicates and should be created. Example: [0, 2, 4]
+
+If all new tasks are duplicates, return []. If none are duplicates, return all indices.`,
+          messages: [{
+            role: "user",
+            content: `EXISTING TASKS:\n${existingTasks.map((t, i) => `${i}. [${t.type}] ${t.title}: ${t.description.slice(0, 200)}`).join("\n")}\n\nNEW TASKS:\n${tasks.map((t, i) => `${i}. [${t.type}] ${t.title}: ${t.description.slice(0, 200)}`).join("\n")}`,
+          }],
+        });
+
+        const text = dedupResponse.content[0];
+        if (text.type === "text") {
+          const match = text.text.match(/\[[\d\s,]*\]/);
+          if (match) {
+            const keepIndices: number[] = JSON.parse(match[0]);
+            const kept = keepIndices.filter((i) => i >= 0 && i < tasks.length);
+            const skipped = tasks.length - kept.length;
+            if (skipped > 0) {
+              console.log(`Dedup: skipping ${skipped} duplicate tasks for ${repo.fullName}`);
+            }
+            newTasks = kept.map((i) => tasks[i]);
+          }
+        }
+
+        // Record usage for the dedup call
+        if (apiKeyId) {
+          const cost = estimateCost(
+            "claude-sonnet-4-20250514",
+            dedupResponse.usage.input_tokens,
+            dedupResponse.usage.output_tokens
+          );
+          await prisma.apiKeyUsage.create({
+            data: {
+              apiKeyId,
+              model: "claude-sonnet-4-20250514",
+              inputTokens: dedupResponse.usage.input_tokens,
+              outputTokens: dedupResponse.usage.output_tokens,
+              estimatedCostUsd: cost,
+              source: "scan",
+              sourceId: repoId,
+            },
+          });
+        }
+      } catch (dedupErr) {
+        console.error("Dedup check failed, creating all tasks:", dedupErr);
+        // Fall through — create all tasks if dedup fails
+      }
+    }
+
     let tasksCreated = 0;
-    for (const task of tasks) {
+    for (const task of newTasks) {
       await prisma.task.create({
         data: {
           repositoryId: repoId,
@@ -155,9 +248,37 @@ IMPORTANT: Respond with ONLY a JSON array of tasks:
       data: { status: "idle", lastScannedAt: new Date() },
     });
 
+    // Record usage if using a DB key (rough estimate for agent SDK usage)
+    if (apiKeyId) {
+      // Agent SDK doesn't give us exact token counts, so we estimate based on budget
+      // We record a placeholder — the actual cost is tracked by the SDK budget
+      await prisma.apiKeyUsage.create({
+        data: {
+          apiKeyId,
+          model: "claude-sonnet-4-20250514",
+          inputTokens: 0,
+          outputTokens: 0,
+          estimatedCostUsd: 0,
+          source: "scan",
+          sourceId: repoId,
+        },
+      });
+      await prisma.apiKey.update({
+        where: { id: apiKeyId },
+        data: { lastUsedAt: new Date(), lastError: null },
+      });
+    }
+
     console.log(`Scan complete for ${repo.fullName}: ${tasksCreated} tasks created`);
   } catch (err) {
     console.error(`Scan failed for repo ${repoId}:`, err);
+
+    if (apiKeyId) {
+      await prisma.apiKey.update({
+        where: { id: apiKeyId },
+        data: { lastError: err instanceof Error ? err.message : "Unknown error" },
+      }).catch(() => {});
+    }
 
     await prisma.scanResult.create({
       data: {

@@ -1,8 +1,9 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { Pagination, paginate } from "@/components/Pagination";
 import { Plus, Loader2, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +19,10 @@ export function Tasks() {
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [page, setPage] = useState(0);
+
+  // Reset page when filters change
+  useEffect(() => { setPage(0); }, [filters]);
 
   // Build query params — only include non-"all" filters
   const queryParams = useMemo(() => {
@@ -34,6 +39,8 @@ export function Tasks() {
     queryKey: ["tasks", queryParams],
     queryFn: () => api.tasks.list(Object.keys(queryParams).length ? queryParams : undefined),
   });
+
+  const pagedTasks = useMemo(() => paginate(tasks, page), [tasks, page]);
 
   const cancelMutation = useMutation({
     mutationFn: (id: string) =>
@@ -180,13 +187,16 @@ export function Tasks() {
           }
         />
       ) : (
-        <TaskTable
-          tasks={tasks}
-          selectedIds={selectedIds}
-          onSelect={handleSelect}
-          onSelectAll={handleSelectAll}
-          onRowClick={handleRowClick}
-        />
+        <>
+          <TaskTable
+            tasks={pagedTasks}
+            selectedIds={selectedIds}
+            onSelect={handleSelect}
+            onSelectAll={handleSelectAll}
+            onRowClick={handleRowClick}
+          />
+          <Pagination page={page} total={tasks.length} onPageChange={setPage} />
+        </>
       )}
 
       {/* Create Sheet */}

@@ -10,6 +10,8 @@ import { taskRoutes } from "./routes/tasks.js";
 import { scanRoutes } from "./routes/scans.js";
 import { aiRoutes } from "./routes/ai.js";
 import { activityRoutes } from "./routes/activity.js";
+import { queueRoutes } from "./routes/queues.js";
+import { apiKeyRoutes } from "./routes/api-keys.js";
 import { schedulerService } from "./services/scheduler.js";
 
 const app = Fastify({ logger: true });
@@ -47,6 +49,8 @@ await app.register(taskRoutes, { prefix: "/api/tasks" });
 await app.register(scanRoutes, { prefix: "/api/scans" });
 await app.register(aiRoutes, { prefix: "/api/ai" });
 await app.register(activityRoutes, { prefix: "/api/activity" });
+await app.register(queueRoutes, { prefix: "/api/queues" });
+await app.register(apiKeyRoutes, { prefix: "/api/api-keys" });
 
 app.get("/api/health", async () => ({ status: "ok" }));
 

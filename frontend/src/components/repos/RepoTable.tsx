@@ -1,4 +1,5 @@
-import { Github, Play, Pause, Trash2, MoreHorizontal } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Github, Play, Pause, Trash2, MoreHorizontal, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -91,6 +92,7 @@ export function RepoTable({
   onDelete,
   onRowClick,
 }: RepoTableProps) {
+  const navigate = useNavigate();
   const allSelected = repos.length > 0 && selectedIds.size === repos.length;
 
   return (
@@ -163,6 +165,10 @@ export function RepoTable({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => navigate(`/repos/${repo.id}?tab=scans`)}>
+                    <Search className="h-4 w-4" />
+                    View Scans
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => onScan(repo.id)}>
                     <Play className="h-4 w-4" />
                     Scan Now

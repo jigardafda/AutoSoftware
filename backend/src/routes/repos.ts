@@ -102,6 +102,83 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
     return { data: { queued: true } };
   });
 
+  // GET /:id/stats — aggregated stats for repo detail page
+  app.get<{ Params: { id: string } }>("/:id/stats", async (request, reply) => {
+    const repo = await prisma.repository.findFirst({
+      where: { id: request.params.id, userId: request.userId },
+    });
+    if (!repo) return reply.code(404).send({ error: { message: "Repo not found" } });
+
+    const [tasks, scans, tasksByStatus, tasksByType, scansByStatus] = await Promise.all([
+      prisma.task.findMany({
+        where: { repositoryId: repo.id },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      }),
+      prisma.scanResult.findMany({
+        where: { repositoryId: repo.id },
+        orderBy: { scannedAt: "desc" },
+        take: 30,
+      }),
+      prisma.task.groupBy({
+        by: ["status"],
+        where: { repositoryId: repo.id },
+        _count: { id: true },
+      }),
+      prisma.task.groupBy({
+        by: ["type"],
+        where: { repositoryId: repo.id },
+        _count: { id: true },
+      }),
+      prisma.scanResult.groupBy({
+        by: ["status"],
+        where: { repositoryId: repo.id },
+        _count: { id: true },
+      }),
+    ]);
+
+    // Get API key usage for this repo (scan source with sourceId = repoId, task source with sourceId in task ids)
+    const taskIds = tasks.map((t) => t.id);
+    const usage = await prisma.apiKeyUsage.findMany({
+      where: {
+        OR: [
+          { source: "scan", sourceId: repo.id },
+          ...(taskIds.length > 0 ? [{ source: "task", sourceId: { in: taskIds } }] : []),
+        ],
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    const totalInputTokens = usage.reduce((s, u) => s + u.inputTokens, 0);
+    const totalOutputTokens = usage.reduce((s, u) => s + u.outputTokens, 0);
+    const totalCost = usage.reduce((s, u) => s + u.estimatedCostUsd, 0);
+
+    // Daily cost aggregation
+    const dailyCost = new Map<string, number>();
+    for (const u of usage) {
+      const day = u.createdAt.toISOString().slice(0, 10);
+      dailyCost.set(day, (dailyCost.get(day) || 0) + u.estimatedCostUsd);
+    }
+
+    return {
+      data: {
+        repo,
+        tasks,
+        scans,
+        tasksByStatus: tasksByStatus.map((g) => ({ status: g.status, count: g._count.id })),
+        tasksByType: tasksByType.map((g) => ({ type: g.type, count: g._count.id })),
+        scansByStatus: scansByStatus.map((g) => ({ status: g.status, count: g._count.id })),
+        usage: {
+          totalInputTokens,
+          totalOutputTokens,
+          totalCost,
+          totalRequests: usage.length,
+          daily: Array.from(dailyCost.entries()).map(([date, cost]) => ({ date, cost })),
+        },
+      },
+    };
+  });
+
   app.get<{ Params: { id: string } }>("/:id/scans", async (request, reply) => {
     const repo = await prisma.repository.findFirst({
       where: { id: request.params.id, userId: request.userId },

@@ -1,3 +1,6 @@
+// Allow Agent SDK to spawn Claude Code subprocesses (not nested)
+delete process.env.CLAUDECODE;
+
 import { PgBoss } from "pg-boss";
 import { config } from "./config.js";
 import { handleRepoScan } from "./handlers/scan.js";
@@ -18,7 +21,7 @@ console.log("Worker started, listening for jobs...");
 await boss.createQueue(JOB_NAMES.REPO_SCAN);
 await boss.createQueue(JOB_NAMES.TASK_EXECUTE);
 
-await boss.work(JOB_NAMES.REPO_SCAN, { teamConcurrency: 2 }, handleRepoScan as any);
+await boss.work(JOB_NAMES.REPO_SCAN, { teamConcurrency: 1 }, handleRepoScan as any);
 await boss.work(JOB_NAMES.TASK_EXECUTE, { teamConcurrency: 1 }, handleTaskExecution as any);
 
 console.log(`Registered handlers for: ${JOB_NAMES.REPO_SCAN}, ${JOB_NAMES.TASK_EXECUTE}`);

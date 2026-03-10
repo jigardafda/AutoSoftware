@@ -12,6 +12,8 @@ import { TaskDetail } from "./pages/TaskDetail";
 import { SettingsPage } from "./pages/Settings";
 import { Scans } from "./pages/Scans";
 import { Activity } from "./pages/Activity";
+import { Queues } from "./pages/Queues";
+import { RepoDetail } from "./pages/RepoDetail";
 import { CommandPalette } from "./components/CommandPalette";
 import { Toaster } from "./components/ui/sonner";
 
@@ -40,10 +42,12 @@ function AppRoutes() {
         <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/repos" element={<Repos />} />
+          <Route path="/repos/:id" element={<RepoDetail />} />
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/tasks/:id" element={<TaskDetail />} />
           <Route path="/scans" element={<Scans />} />
           <Route path="/activity" element={<Activity />} />
+          <Route path="/queues" element={<Queues />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" />} />

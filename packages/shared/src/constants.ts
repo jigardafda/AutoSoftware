@@ -8,6 +8,25 @@ export const DEFAULT_SCAN_BUDGET_USD = 2.0;
 export const DEFAULT_TASK_BUDGET_USD = 10.0;
 export const MAX_RETRIES = 3;
 
+// Pricing per million tokens (USD)
+export const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  "claude-sonnet-4-20250514": { input: 3, output: 15 },
+  "claude-opus-4-20250514": { input: 15, output: 75 },
+  "claude-haiku-4-5-20251001": { input: 0.8, output: 4 },
+};
+
+export function estimateCost(
+  model: string,
+  inputTokens: number,
+  outputTokens: number
+): number {
+  const pricing = MODEL_PRICING[model] || MODEL_PRICING["claude-sonnet-4-20250514"];
+  return (
+    (inputTokens / 1_000_000) * pricing.input +
+    (outputTokens / 1_000_000) * pricing.output
+  );
+}
+
 export const OAUTH_CONFIGS = {
   github: {
     authUrl: "https://github.com/login/oauth/authorize",

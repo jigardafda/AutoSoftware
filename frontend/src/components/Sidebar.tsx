@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Search,
   Activity,
+  Layers,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -38,6 +39,7 @@ const navItems = [
   { to: "/tasks", label: "Tasks", icon: CheckCircle2 },
   { to: "/scans", label: "Scans", icon: Search },
   { to: "/activity", label: "Activity", icon: Activity },
+  { to: "/queues", label: "Queues", icon: Layers },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 

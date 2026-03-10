@@ -10,6 +10,7 @@ import {
   GitBranch,
   CheckCircle2,
   Activity,
+  Layers,
   MessageSquare,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -45,6 +46,7 @@ const routeTitles: Record<string, string> = {
   "/tasks": "Tasks",
   "/scans": "Scans",
   "/activity": "Activity",
+  "/queues": "Queues",
   "/settings": "Settings",
 };
 
@@ -54,6 +56,7 @@ const mobileNavItems = [
   { to: "/tasks", label: "Tasks", icon: CheckCircle2 },
   { to: "/scans", label: "Scans", icon: Search },
   { to: "/activity", label: "Activity", icon: Activity },
+  { to: "/queues", label: "Queues", icon: Layers },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 

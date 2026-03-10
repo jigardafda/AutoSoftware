@@ -65,6 +65,7 @@ model User {
   tasks          Task[]
   aiInsights     AiInsight[]
   activityEvents ActivityEvent[]
+  apiKeys        ApiKey[]
 }
 
 model Account {
@@ -164,4 +165,37 @@ model ActivityEvent {
   metadata   Json     @default("{}")
   createdAt  DateTime @default(now())
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ApiKey {
+  id           String   @id @default(cuid())
+  userId       String
+  label        String
+  encryptedKey String
+  keyPrefix    String
+  priority     Int      @default(0)
+  isActive     Boolean  @default(true)
+  lastUsedAt   DateTime?
+  lastError    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usageRecords ApiKeyUsage[]
+  @@index([userId, isActive, priority])
+}
+
+model ApiKeyUsage {
+  id               String   @id @default(cuid())
+  apiKeyId         String
+  model            String
+  inputTokens      Int
+  outputTokens     Int
+  estimatedCostUsd Float
+  source           String   // "scan" | "task" | "chat" | "command"
+  sourceId         String?
+  createdAt        DateTime @default(now())
+
+  apiKey ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+  @@index([apiKeyId, createdAt])
 }

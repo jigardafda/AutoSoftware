@@ -24,4 +24,5 @@ export const config = {
     clientSecret: process.env.BITBUCKET_CLIENT_SECRET || "",
   },
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
+  apiKeyEncryptionSecret: process.env.API_KEY_ENCRYPTION_SECRET || "",
 };
