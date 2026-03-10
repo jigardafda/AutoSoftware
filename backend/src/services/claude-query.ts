@@ -165,8 +165,8 @@ export async function recordUsage(
 }
 
 /**
- * Streaming query using the Agent SDK.
- * Yields text content as it streams.
+ * Streaming query using the Agent SDK with includePartialMessages.
+ * Yields text content token-by-token as it streams.
  */
 export async function* streamQuery(
   systemPrompt: string,
@@ -177,6 +177,8 @@ export async function* streamQuery(
 
   const inputText = systemPrompt + "\n" + userMessage;
   let fullResult = "";
+  let inputTokens = 0;
+  let outputTokens = 0;
 
   for await (const message of query({
     prompt: userMessage,
@@ -185,22 +187,38 @@ export async function* streamQuery(
       maxTurns: 1,
       systemPrompt,
       model,
+      includePartialMessages: true, // Enable streaming
     },
   })) {
-    if (message.type === "assistant") {
-      // Yield text content as it streams
-      for (const block of message.message.content) {
-        if (block.type === "text") {
-          fullResult += block.text;
-          yield { text: block.text, done: false };
-        }
+    // Handle streaming events for real-time text output
+    if (message.type === "stream_event") {
+      const event = message.event as any;
+
+      // Extract text deltas for streaming
+      if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
+        const text = event.delta.text || "";
+        fullResult += text;
+        yield { text, done: false };
+      }
+
+      // Capture usage from message events
+      if (event.type === "message_start" && event.message?.usage) {
+        inputTokens = event.message.usage.input_tokens || 0;
+      }
+      if (event.type === "message_delta" && event.usage) {
+        outputTokens = event.usage.output_tokens || 0;
       }
     }
   }
 
-  // Yield final result with usage estimation
-  const inputTokens = estimateTokens(inputText);
-  const outputTokens = estimateTokens(fullResult);
+  // Fall back to estimated tokens if not captured from events
+  if (inputTokens === 0) {
+    inputTokens = estimateTokens(inputText);
+  }
+  if (outputTokens === 0) {
+    outputTokens = estimateTokens(fullResult);
+  }
+
   const estimatedCostUsd = estimateCost(model, inputTokens, outputTokens);
 
   yield {
