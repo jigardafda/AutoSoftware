@@ -1,0 +1,191 @@
+import Anthropic from "@anthropic-ai/sdk";
+import { prisma } from "../db.js";
+import { config } from "../config.js";
+
+const MAX_CLARIFICATION_ROUNDS = 2;
+const MAX_QUESTIONS_PER_ROUND = 5;
+
+export async function handleEmbedScreening(jobs: { data: { submissionId: string } }[]) {
+  const { submissionId } = jobs[0].data;
+
+  const submission = await prisma.embedSubmission.findUnique({
+    where: { id: submissionId },
+    include: {
+      project: true,
+      questions: { orderBy: [{ round: "asc" }, { sortOrder: "asc" }] },
+    },
+  });
+
+  if (!submission) {
+    console.error(`Embed submission ${submissionId} not found`);
+    return;
+  }
+
+  const embedConfig = await prisma.embedConfig.findUnique({
+    where: { projectId: submission.projectId },
+  });
+
+  if (!embedConfig) {
+    console.error(`Embed config for project ${submission.projectId} not found`);
+    return;
+  }
+
+  await prisma.embedSubmission.update({
+    where: { id: submissionId },
+    data: { screeningStatus: "screening" },
+  });
+
+  try {
+    const anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
+
+    // Build context from previous rounds
+    let previousContext = "";
+    if (submission.questions.length > 0) {
+      previousContext = "\n\nPrevious clarification rounds:\n";
+      const byRound = new Map<number, typeof submission.questions>();
+      for (const q of submission.questions) {
+        if (!byRound.has(q.round)) byRound.set(q.round, []);
+        byRound.get(q.round)!.push(q);
+      }
+      for (const [round, questions] of byRound) {
+        previousContext += `\nRound ${round}:\n`;
+        for (const q of questions) {
+          previousContext += `- ${q.label}: ${q.answer ? JSON.stringify(q.answer) : "(unanswered)"}\n`;
+        }
+      }
+    }
+
+    // Attachment info (no base64 data)
+    const attachmentInfo = (submission.attachments as any[]).map(
+      (a) => `${a.filename} (${a.mimeType}, ${Math.round(a.size / 1024)}KB)`
+    ).join(", ");
+
+    const prompt = `You are evaluating a requirement submission for the software project "${submission.project.name}".
+
+Title: ${submission.title}
+Description: ${submission.description}
+Input method: ${submission.inputMethod}
+${attachmentInfo ? `Attachments: ${attachmentInfo}` : ""}
+${previousContext}
+
+Evaluate this submission and respond with JSON only (no markdown code blocks):
+
+If the submission is clear enough to be a valid software requirement, respond:
+{"status": "ready", "score": <1-10>, "reason": "<brief explanation>"}
+
+If you need more information to properly evaluate (and this is round ${submission.clarificationRound + 1} of max ${MAX_CLARIFICATION_ROUNDS}), respond:
+{"status": "needs_input", "score": <1-10 preliminary>, "reason": "<why more info needed>", "questions": [{"questionKey": "<snake_case_id>", "label": "<question text>", "type": "<select|multi_select|confirm|text>", "options": [{"value": "<val>", "label": "<display>"}], "required": true}]}
+
+If the submission is spam, gibberish, or completely irrelevant, respond:
+{"status": "rejected", "score": <1-3>, "reason": "<brief explanation>"}
+
+Score guidelines:
+- 8-10: Clear, actionable requirement with good detail
+- 5-7: Reasonable requirement but could use more detail
+- 3-4: Vague or unclear, needs significant clarification
+- 1-2: Spam, gibberish, or completely irrelevant
+
+Maximum ${MAX_QUESTIONS_PER_ROUND} questions per round. Prefer select/multi_select over text when possible.`;
+
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1024,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const text = response.content[0].type === "text" ? response.content[0].text : "";
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error("Failed to parse screening response");
+    }
+
+    const result = JSON.parse(jsonMatch[0]);
+
+    if (result.status === "rejected" || result.score <= 3) {
+      await prisma.embedSubmission.update({
+        where: { id: submissionId },
+        data: {
+          screeningStatus: "rejected",
+          screeningScore: result.score,
+          screeningReason: result.reason,
+        },
+      });
+      return;
+    }
+
+    if (result.status === "needs_input" && submission.clarificationRound < MAX_CLARIFICATION_ROUNDS) {
+      const questions = (result.questions || []).slice(0, MAX_QUESTIONS_PER_ROUND);
+      const nextRound = submission.clarificationRound + 1;
+
+      for (let i = 0; i < questions.length; i++) {
+        const q = questions[i];
+        await prisma.embedQuestion.create({
+          data: {
+            submissionId,
+            round: nextRound,
+            questionKey: q.questionKey,
+            label: q.label,
+            type: q.type || "text",
+            options: q.options || [],
+            required: q.required ?? true,
+            sortOrder: i,
+          },
+        });
+      }
+
+      await prisma.embedSubmission.update({
+        where: { id: submissionId },
+        data: {
+          screeningStatus: "needs_input",
+          screeningScore: result.score,
+          screeningReason: result.reason,
+          clarificationRound: nextRound,
+        },
+      });
+      return;
+    }
+
+    // Ready or max rounds reached
+    const score = result.score || 5;
+
+    if (score >= embedConfig.scoreThreshold) {
+      // Auto-approve — will be converted in embed-convert job
+      await prisma.embedSubmission.update({
+        where: { id: submissionId },
+        data: {
+          screeningStatus: "approved",
+          screeningScore: score,
+          screeningReason: result.reason,
+        },
+      });
+
+      // Queue conversion
+      const { getBoss } = await import("../boss.js");
+      const boss = getBoss();
+      await boss.send("embed-convert", { submissionId }, {
+        retryLimit: 2,
+        retryBackoff: true,
+        expireInSeconds: 5 * 60,
+      });
+    } else {
+      // Below threshold — goes to review queue
+      await prisma.embedSubmission.update({
+        where: { id: submissionId },
+        data: {
+          screeningStatus: "scored",
+          screeningScore: score,
+          screeningReason: result.reason,
+        },
+      });
+    }
+  } catch (error: any) {
+    console.error(`Embed screening failed for ${submissionId}:`, error);
+    await prisma.embedSubmission.update({
+      where: { id: submissionId },
+      data: {
+        screeningStatus: "pending",
+        metadata: { error: error.message },
+      },
+    });
+  }
+}
