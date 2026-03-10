@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import crypto from "crypto";
 import { prisma } from "../db.js";
 import { schedulerService } from "../services/scheduler.js";
+import { renderEmbedPage } from "../templates/embed.js";
 
 const MAX_SUBMISSIONS_PER_HOUR = 3;
 
@@ -51,8 +52,21 @@ export const embedRoutes: FastifyPluginAsync = async (app) => {
         getSessionToken(request, reply);
       }
 
-      // Placeholder HTML — will be replaced by full template in Task 5
-      const html = `<!DOCTYPE html><html><body><h1>${config.title}</h1><p>Embed for ${project.name}</p></body></html>`;
+      const html = renderEmbedPage({
+        title: config.title,
+        welcomeMessage: config.welcomeMessage,
+        logoUrl: config.logoUrl,
+        primaryColor: config.primaryColor,
+        backgroundColor: config.backgroundColor,
+        textColor: config.textColor,
+        borderRadius: config.borderRadius,
+        fontFamily: config.fontFamily,
+        maxFileSize: config.maxFileSize,
+        maxTotalSize: config.maxTotalSize,
+        allowedFileTypes: config.allowedFileTypes,
+        language: config.language,
+        projectId: project.id,
+      }, project.name);
       return reply.type("text/html").send(html);
     }
   );
