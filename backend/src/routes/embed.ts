@@ -215,6 +215,40 @@ export const embedRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
+  // List all submissions for current session
+  app.get<{ Params: { projectId: string } }>(
+    "/:projectId/submissions",
+    async (request, reply) => {
+      const sessionToken = getSessionToken(request, reply);
+
+      const submissions = await prisma.embedSubmission.findMany({
+        where: {
+          projectId: request.params.projectId,
+          sessionToken,
+        },
+        include: {
+          questions: { orderBy: [{ round: "asc" }, { sortOrder: "asc" }] },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      const data = submissions.map((sub) => ({
+        id: sub.id,
+        title: sub.title,
+        description: sub.description,
+        screeningStatus: sub.screeningStatus,
+        screeningScore: sub.screeningScore,
+        screeningReason: sub.screeningReason,
+        clarificationRound: sub.clarificationRound,
+        inputMethod: sub.inputMethod,
+        createdAt: sub.createdAt,
+        questions: sub.questions,
+      }));
+
+      return { data };
+    }
+  );
+
   // Get embed config (public, for preview rendering)
   app.get<{ Params: { projectId: string } }>(
     "/:projectId/config",

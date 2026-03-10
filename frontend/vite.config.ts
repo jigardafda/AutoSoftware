@@ -14,6 +14,7 @@ export default defineConfig({
     port: 5001,
     proxy: {
       "/api": "http://localhost:5002",
+      "/embed": "http://localhost:5002",
     },
   },
 });

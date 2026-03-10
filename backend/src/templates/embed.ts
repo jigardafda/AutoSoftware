@@ -615,6 +615,139 @@ export function renderEmbedPage(config: EmbedConfigData, projectName: string): s
       text-align: left;
     }
 
+    /* Submissions History */
+    .history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .history-header h2 {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .btn-new-submission {
+      padding: 7px 14px;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: calc(var(--radius) * 0.4);
+      font-family: var(--font);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: filter 0.2s;
+    }
+
+    .btn-new-submission:hover {
+      filter: brightness(1.1);
+    }
+
+    .submission-card {
+      border: 1.5px solid #eee;
+      border-radius: calc(var(--radius) * 0.5);
+      padding: 14px 16px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .submission-card:hover {
+      border-color: var(--primary);
+      background: color-mix(in srgb, var(--primary) 3%, white);
+    }
+
+    .submission-card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .submission-card-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+
+    .submission-card-status {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .status-pending, .status-screening {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .status-needs_input {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    .status-approved, .status-scored {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .status-rejected {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .submission-card-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 6px;
+      font-size: 12px;
+      color: #999;
+    }
+
+    .submission-card-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .submission-card-dot.pulsing {
+      animation: pulse-dot 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .submissions-empty {
+      text-align: center;
+      padding: 24px 16px;
+      color: #999;
+      font-size: 13px;
+    }
+
+    .submission-card .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
     .footer {
       padding: 14px 28px;
       text-align: center;
@@ -659,8 +792,24 @@ export function renderEmbedPage(config: EmbedConfigData, projectName: string): s
       </div>
     </div>
 
+    <!-- Loading -->
+    <div class="step active" id="step-loading">
+      <div class="screening-content">
+        <div class="spinner"></div>
+      </div>
+    </div>
+
+    <!-- Step 0: Submissions History -->
+    <div class="step" id="step-history">
+      <div class="history-header">
+        <h2 id="history-title">Your Submissions</h2>
+        <button class="btn-new-submission" id="btn-new-submission">+ New</button>
+      </div>
+      <div id="submissions-list"></div>
+    </div>
+
     <!-- Step 1: Submit Form -->
-    <div class="step active" id="step-submit">
+    <div class="step" id="step-submit">
       <div class="global-error" id="global-error"></div>
 
       <div class="form-group">
@@ -767,6 +916,8 @@ export function renderEmbedPage(config: EmbedConfigData, projectName: string): s
       var $ = function(id) { return document.getElementById(id); };
 
       var steps = {
+        loading: $('step-loading'),
+        history: $('step-history'),
         submit: $('step-submit'),
         screening: $('step-screening'),
         questions: $('step-questions'),
@@ -780,6 +931,7 @@ export function renderEmbedPage(config: EmbedConfigData, projectName: string): s
       var isRecording = false;
       var recognition = null;
       var inputMethod = 'text';
+      var allSubmissions = [];
 
       // --- Initialize UI text ---
       $('label-title').innerHTML = lang.titleLabel + '<span class="required">*</span>';
@@ -1092,6 +1244,7 @@ export function renderEmbedPage(config: EmbedConfigData, projectName: string): s
           }
 
           submissionId = data.data.id;
+          saveActiveSubmission(submissionId);
           showStep('screening');
           startPolling();
         } catch (err) {
@@ -1160,7 +1313,7 @@ export function renderEmbedPage(config: EmbedConfigData, projectName: string): s
           var group = document.createElement('div');
           group.className = 'question-group';
 
-          var labelHtml = escapeHtmlClient(q.questionText);
+          var labelHtml = escapeHtmlClient(q.label);
           if (q.required) {
             labelHtml += '<span class="required">*</span>';
           }
@@ -1168,7 +1321,7 @@ export function renderEmbedPage(config: EmbedConfigData, projectName: string): s
           label.innerHTML = labelHtml;
           group.appendChild(label);
 
-          switch (q.questionType) {
+          switch (q.type) {
             case 'select':
               var select = document.createElement('select');
               select.setAttribute('data-key', q.questionKey);
@@ -1372,20 +1525,202 @@ export function renderEmbedPage(config: EmbedConfigData, projectName: string): s
           '</div>' +
           '<h2>' + escapeHtmlClient(lang.success) + '</h2>' +
           '<p>' + escapeHtmlClient(lang.successDesc) + '</p>' +
-          '<div class="ref-id">' + escapeHtmlClient(lang.refId) + ': ' + escapeHtmlClient(sub.id.substring(0, 8).toUpperCase()) + '</div>';
+          '<div class="ref-id">' + escapeHtmlClient(lang.refId) + ': ' + escapeHtmlClient(sub.id.substring(0, 8).toUpperCase()) + '</div>' +
+          '<button class="btn-primary" style="margin-top:20px;width:auto;padding:10px 24px;display:inline-block;" onclick="window.__backToHistory()">Back to Submissions</button>';
       }
 
       function renderRejection(sub) {
         var c = $('result-content');
-        var reason = sub.rejectionReason || '';
+        var reason = sub.screeningReason || '';
         c.innerHTML =
           '<div class="result-icon rejected">' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' +
           '</div>' +
           '<h2>' + escapeHtmlClient(lang.rejected) + '</h2>' +
           '<p>' + escapeHtmlClient(lang.rejectedDesc) + '</p>' +
-          (reason ? '<div class="rejection-reason">' + escapeHtmlClient(reason) + '</div>' : '');
+          (reason ? '<div class="rejection-reason">' + escapeHtmlClient(reason) + '</div>' : '') +
+          '<button class="btn-primary" style="margin-top:20px;width:auto;padding:10px 24px;display:inline-block;" onclick="window.__backToHistory()">Back to Submissions</button>';
       }
+
+      // --- Submissions History ---
+      var STATUS_LABELS = {
+        pending: 'Pending',
+        screening: 'Screening',
+        needs_input: 'Needs Input',
+        approved: 'Approved',
+        scored: 'Approved',
+        rejected: 'Rejected'
+      };
+
+      function formatDate(dateStr) {
+        var d = new Date(dateStr);
+        var now = new Date();
+        var diffMs = now - d;
+        var diffMin = Math.floor(diffMs / 60000);
+        if (diffMin < 1) return 'Just now';
+        if (diffMin < 60) return diffMin + 'm ago';
+        var diffHr = Math.floor(diffMin / 60);
+        if (diffHr < 24) return diffHr + 'h ago';
+        var diffDay = Math.floor(diffHr / 24);
+        if (diffDay < 7) return diffDay + 'd ago';
+        return d.toLocaleDateString();
+      }
+
+      function isActiveStatus(status) {
+        return status === 'pending' || status === 'screening' || status === 'needs_input';
+      }
+
+      function renderSubmissionsList(submissions) {
+        allSubmissions = submissions;
+        var container = $('submissions-list');
+        container.innerHTML = '';
+
+        if (submissions.length === 0) {
+          container.innerHTML = '<div class="submissions-empty">No submissions yet</div>';
+          return;
+        }
+
+        submissions.forEach(function(sub) {
+          var card = document.createElement('div');
+          card.className = 'submission-card';
+          card.setAttribute('data-id', sub.id);
+
+          var statusClass = 'status-' + sub.screeningStatus;
+          var dotColor = '#eab308';
+          var pulsing = '';
+          if (sub.screeningStatus === 'approved' || sub.screeningStatus === 'scored') dotColor = '#10b981';
+          else if (sub.screeningStatus === 'rejected') dotColor = '#ef4444';
+          else if (sub.screeningStatus === 'needs_input') dotColor = '#3b82f6';
+          if (sub.screeningStatus === 'pending' || sub.screeningStatus === 'screening') pulsing = ' pulsing';
+
+          card.innerHTML =
+            '<div class="submission-card-top">' +
+              '<span class="submission-card-title">' + escapeHtmlClient(sub.title) + '</span>' +
+              '<span class="submission-card-status ' + statusClass + '">' +
+                '<span class="submission-card-dot' + pulsing + '" style="background:' + dotColor + '"></span>' +
+                (STATUS_LABELS[sub.screeningStatus] || sub.screeningStatus) +
+              '</span>' +
+            '</div>' +
+            '<div class="submission-card-meta">' +
+              '<span>' + formatDate(sub.createdAt) + '</span>' +
+              (sub.screeningScore ? '<span>Score: ' + sub.screeningScore + '/10</span>' : '') +
+            '</div>';
+
+          card.addEventListener('click', function() {
+            openSubmission(sub);
+          });
+
+          container.appendChild(card);
+        });
+      }
+
+      function openSubmission(sub) {
+        submissionId = sub.id;
+        saveActiveSubmission(sub.id);
+
+        switch (sub.screeningStatus) {
+          case 'pending':
+          case 'screening':
+            showStep('screening');
+            startPolling();
+            break;
+          case 'needs_input':
+            renderQuestions(sub.questions || []);
+            showStep('questions');
+            break;
+          case 'approved':
+          case 'scored':
+            renderSuccess(sub);
+            showStep('result');
+            break;
+          case 'rejected':
+            renderRejection(sub);
+            showStep('result');
+            break;
+          default:
+            showStep('history');
+        }
+      }
+
+      function saveActiveSubmission(id) {
+        try {
+          localStorage.setItem('embed_active_' + CONFIG.projectId, id);
+        } catch(e) {}
+      }
+
+      function getActiveSubmission() {
+        try {
+          return localStorage.getItem('embed_active_' + CONFIG.projectId);
+        } catch(e) { return null; }
+      }
+
+      function clearActiveSubmission() {
+        try {
+          localStorage.removeItem('embed_active_' + CONFIG.projectId);
+        } catch(e) {}
+      }
+
+      $('btn-new-submission').addEventListener('click', function() {
+        clearActiveSubmission();
+        submissionId = null;
+        $('input-title').value = '';
+        $('input-desc').value = '';
+        attachedFiles = [];
+        renderFileList();
+        hideGlobalError();
+        hideError($('error-title'));
+        hideError($('error-desc'));
+        $('btn-submit').disabled = false;
+        $('btn-submit').textContent = lang.submit;
+        showStep('submit');
+      });
+
+      // Back to history from result page
+      window.__backToHistory = function() {
+        stopPolling();
+        clearActiveSubmission();
+        submissionId = null;
+        loadSubmissions();
+      };
+
+      // --- Page Load: fetch submissions and restore state ---
+      async function loadSubmissions() {
+        try {
+          var resp = await fetch('/embed/' + CONFIG.projectId + '/submissions', {
+            credentials: 'include'
+          });
+          if (!resp.ok) {
+            showStep('submit');
+            return;
+          }
+          var data = await resp.json();
+          var submissions = data.data || [];
+
+          if (submissions.length === 0) {
+            showStep('submit');
+            return;
+          }
+
+          renderSubmissionsList(submissions);
+
+          // Check if there's an active submission to resume
+          var activeId = getActiveSubmission();
+          if (activeId) {
+            var active = submissions.find(function(s) { return s.id === activeId; });
+            if (active && isActiveStatus(active.screeningStatus)) {
+              openSubmission(active);
+              return;
+            }
+          }
+
+          showStep('history');
+        } catch (err) {
+          showStep('submit');
+        }
+      }
+
+      // Initialize page
+      loadSubmissions();
 
     })();
   </script>

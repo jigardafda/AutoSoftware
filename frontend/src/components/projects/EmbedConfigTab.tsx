@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
-import { Copy, Check, Loader2, Eye, Save } from "lucide-react";
+import { Copy, Check, Loader2, Eye, Save, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -121,7 +121,7 @@ export function EmbedConfigTab({ projectId }: EmbedConfigTabProps) {
     });
   };
 
-  const backendUrl = window.location.origin;
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || window.location.origin;
   const embedCode = `<iframe src="${backendUrl}/embed/${projectId}" width="100%" height="600" frameborder="0" allow="microphone"></iframe>`;
 
   const handleCopy = async () => {
@@ -378,6 +378,14 @@ export function EmbedConfigTab({ projectId }: EmbedConfigTabProps) {
               <Eye className="h-4 w-4" />
               Live Preview
             </CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.open(`/embed/${projectId}?preview=true`, "_blank")}
+            >
+              <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+              Open in New Tab
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
