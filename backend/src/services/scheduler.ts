@@ -15,6 +15,8 @@ export const schedulerService = {
     await boss.createQueue(JOB_NAMES.REPO_SCAN);
     await boss.createQueue(JOB_NAMES.TASK_PLAN);
     await boss.createQueue(JOB_NAMES.TASK_EXECUTE);
+    await boss.createQueue(JOB_NAMES.EMBED_SCREEN);
+    await boss.createQueue(JOB_NAMES.EMBED_CONVERT);
 
     const activeRepos = await prisma.repository.findMany({
       where: { isActive: true },
@@ -63,6 +65,22 @@ export const schedulerService = {
       retryLimit: 3,
       retryBackoff: true,
       expireInSeconds: 60 * 60,
+    });
+  },
+
+  async queueEmbedScreening(submissionId: string) {
+    await boss.send(JOB_NAMES.EMBED_SCREEN, { submissionId }, {
+      retryLimit: 2,
+      retryBackoff: true,
+      expireInSeconds: 5 * 60,
+    });
+  },
+
+  async queueEmbedConversion(submissionId: string) {
+    await boss.send(JOB_NAMES.EMBED_CONVERT, { submissionId }, {
+      retryLimit: 2,
+      retryBackoff: true,
+      expireInSeconds: 5 * 60,
     });
   },
 

@@ -14,6 +14,7 @@ import { queueRoutes } from "./routes/queues.js";
 import { apiKeyRoutes } from "./routes/api-keys.js";
 import { projectRoutes } from "./routes/projects.js";
 import { integrationRoutes } from "./routes/integrations.js";
+import { embedRoutes } from "./routes/embed.js";
 import { schedulerService } from "./services/scheduler.js";
 
 // Register integration adapters
@@ -58,6 +59,7 @@ await app.register(queueRoutes, { prefix: "/api/queues" });
 await app.register(apiKeyRoutes, { prefix: "/api/api-keys" });
 await app.register(projectRoutes, { prefix: "/api/projects" });
 await app.register(integrationRoutes, { prefix: "/api/integrations" });
+await app.register(embedRoutes, { prefix: "/embed" });
 
 app.get("/api/health", async () => ({ status: "ok" }));
 
