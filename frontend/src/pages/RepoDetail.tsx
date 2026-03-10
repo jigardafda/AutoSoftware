@@ -22,6 +22,7 @@ import {
   Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FileBrowser } from "@/components/repos/FileBrowser";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -148,7 +149,7 @@ export function RepoDetail() {
   const [tasksPage, setTasksPage] = useState(0);
   const [scansPage, setScansPage] = useState(0);
 
-  const VALID_TABS = ["overview", "tasks", "scans", "usage"] as const;
+  const VALID_TABS = ["overview", "files", "tasks", "scans", "usage"] as const;
   const tab = useMemo(() => {
     const t = searchParams.get("tab");
     return VALID_TABS.includes(t as any) ? t! : "overview";
@@ -288,6 +289,7 @@ export function RepoDetail() {
       <Tabs value={tab} onValueChange={(v) => setSearchParams({ tab: v }, { replace: true })} className="w-full">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="files">Files</TabsTrigger>
           <TabsTrigger value="tasks">Tasks ({totalTasks})</TabsTrigger>
           <TabsTrigger value="scans">Scans ({totalScans})</TabsTrigger>
           <TabsTrigger value="usage">Usage</TabsTrigger>
@@ -385,6 +387,11 @@ export function RepoDetail() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Files Tab */}
+        <TabsContent value="files">
+          <FileBrowser repoId={id!} />
         </TabsContent>
 
         {/* Tasks Tab */}

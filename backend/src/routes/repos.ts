@@ -1,8 +1,22 @@
 import type { FastifyPluginAsync } from "fastify";
+import fs from "fs/promises";
 import { prisma } from "../db.js";
 import { listRemoteRepos } from "../services/git-providers.js";
 import { schedulerService } from "../services/scheduler.js";
+import { listDirectory, readFile, safePath, RepoFsError } from "../services/repo-fs.js";
 import type { ConnectRepoInput, UpdateRepoInput, OAuthProvider } from "@autosoftware/shared";
+
+const MIME_TYPES: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  svg: "image/svg+xml",
+  webp: "image/webp",
+  ico: "image/x-icon",
+  bmp: "image/bmp",
+  pdf: "application/pdf",
+};
 
 export const repoRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", (app as any).requireAuth);
@@ -192,4 +206,109 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
     });
     return { data: scans };
   });
+
+  // GET /:id/tree — list directory contents for file browser
+  app.get<{ Params: { id: string }; Querystring: { path?: string } }>(
+    "/:id/tree",
+    async (request, reply) => {
+      const repo = await prisma.repository.findFirst({
+        where: { id: request.params.id, userId: request.userId },
+      });
+      if (!repo) return reply.code(404).send({ error: { message: "Repo not found" } });
+
+      try {
+        const entries = await listDirectory(repo.id, request.query.path || "");
+        return { data: entries };
+      } catch (err: any) {
+        if (err instanceof RepoFsError && err.code === "PATH_TRAVERSAL") {
+          return reply.code(400).send({ error: { message: "Invalid path" } });
+        }
+        if (err.code === "ENOENT" || err.code === "ENOTDIR") {
+          return reply.code(404).send({
+            error: { message: "Repository files not available. Trigger a scan to clone it." },
+          });
+        }
+        throw err;
+      }
+    },
+  );
+
+  // GET /:id/raw — serve raw file bytes (images, PDFs)
+  app.get<{ Params: { id: string }; Querystring: { path?: string } }>(
+    "/:id/raw",
+    async (request, reply) => {
+      const repo = await prisma.repository.findFirst({
+        where: { id: request.params.id, userId: request.userId },
+      });
+      if (!repo) return reply.code(404).send({ error: { message: "Repo not found" } });
+
+      const filePath = request.query.path;
+      if (!filePath) {
+        return reply.code(400).send({ error: { message: "Query parameter 'path' is required" } });
+      }
+
+      try {
+        const resolved = safePath(repo.id, filePath);
+        const stat = await fs.lstat(resolved);
+        if (!stat.isFile()) {
+          return reply.code(400).send({ error: { message: "Not a file" } });
+        }
+
+        // 10MB limit for raw serving
+        if (stat.size > 10 * 1024 * 1024) {
+          return reply.code(413).send({ error: { message: "File too large" } });
+        }
+
+        const ext = filePath.split(".").pop()?.toLowerCase() || "";
+        const mime = MIME_TYPES[ext] || "application/octet-stream";
+
+        const buffer = await fs.readFile(resolved);
+        return reply
+          .header("Content-Type", mime)
+          .header("Content-Length", stat.size)
+          .header("Cache-Control", "private, max-age=300")
+          .send(buffer);
+      } catch (err: any) {
+        if (err instanceof RepoFsError && err.code === "PATH_TRAVERSAL") {
+          return reply.code(400).send({ error: { message: "Invalid path" } });
+        }
+        if (err.code === "ENOENT") {
+          return reply.code(404).send({ error: { message: "File not found" } });
+        }
+        throw err;
+      }
+    },
+  );
+
+  // GET /:id/file — read file content for file browser
+  app.get<{ Params: { id: string }; Querystring: { path?: string } }>(
+    "/:id/file",
+    async (request, reply) => {
+      const repo = await prisma.repository.findFirst({
+        where: { id: request.params.id, userId: request.userId },
+      });
+      if (!repo) return reply.code(404).send({ error: { message: "Repo not found" } });
+
+      const filePath = request.query.path;
+      if (!filePath) {
+        return reply.code(400).send({ error: { message: "Query parameter 'path' is required" } });
+      }
+
+      try {
+        const result = await readFile(repo.id, filePath);
+        return { data: result };
+      } catch (err: any) {
+        if (err instanceof RepoFsError && err.code === "PATH_TRAVERSAL") {
+          return reply.code(400).send({ error: { message: "Invalid path" } });
+        }
+        if (err.code === "ENOENT") {
+          return reply.code(404).send({ error: { message: "File not found" } });
+        }
+        if (err.code === "EISDIR") {
+          return reply.code(400).send({ error: { message: "Path is a directory, not a file" } });
+        }
+        throw err;
+      }
+    },
+  );
 };

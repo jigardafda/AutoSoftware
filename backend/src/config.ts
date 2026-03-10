@@ -25,4 +25,5 @@ export const config = {
   },
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
   apiKeyEncryptionSecret: process.env.API_KEY_ENCRYPTION_SECRET || "",
+  workDir: process.env.WORK_DIR || "/tmp/autosoftware-workspaces",
 };

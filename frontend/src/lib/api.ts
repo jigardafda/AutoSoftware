@@ -34,6 +34,14 @@ export const api = {
       }),
     scans: (id: string) => request<any[]>(`/repos/${id}/scans`),
     stats: (id: string) => request<any>(`/repos/${id}/stats`),
+    tree: (id: string, path?: string) => {
+      const qs = path ? `?path=${encodeURIComponent(path)}` : "";
+      return request<any[]>(`/repos/${id}/tree${qs}`);
+    },
+    file: (id: string, path: string) =>
+      request<any>(`/repos/${id}/file?path=${encodeURIComponent(path)}`),
+    rawUrl: (id: string, path: string) =>
+      `/api/repos/${id}/raw?path=${encodeURIComponent(path)}`,
   },
   tasks: {
     list: (params?: Record<string, string>) => {
