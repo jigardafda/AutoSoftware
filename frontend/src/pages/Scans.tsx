@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
+import { toast } from "sonner";
 import { Pagination, paginate } from "@/components/Pagination";
 import {
   CheckCircle2,
@@ -13,6 +14,7 @@ import {
   Loader2,
   Filter,
   X,
+  Ban,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -36,6 +38,7 @@ import { useSort, type SortConfig } from "@/hooks/useSort";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
+import { RefreshButton } from "@/components/RefreshButton";
 
 function timeAgo(date: string) {
   const seconds = Math.floor(
@@ -122,6 +125,7 @@ const SCAN_SORT_CONFIG: SortConfig = {
 
 export function Scans() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [repoFilter, setRepoFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [tasksFilter, setTasksFilter] = useState<string>("all");
@@ -132,6 +136,16 @@ export function Scans() {
     queryFn: api.scans.list,
     refetchInterval: (query) =>
       query.state.data?.some((s: any) => s.status === "in_progress") ? 3000 : false,
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (scanId: string) => api.scans.cancel(scanId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scans"] });
+      queryClient.invalidateQueries({ queryKey: ["repos"] });
+      toast.success("Scan cancelled");
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   // Derive unique repos for filter dropdown
@@ -217,6 +231,7 @@ export function Scans() {
         <Badge variant="secondary" className="text-xs">
           {scans.length}
         </Badge>
+        <RefreshButton queryKeys={["scans", "repos"]} />
       </div>
 
       <ActiveScans />
@@ -295,7 +310,7 @@ export function Scans() {
                 <SortableHeader label="Status" sortKey="status" sort={sort} onSort={onSort} />
                 <SortableHeader label="Tasks Created" sortKey="tasksCreated" sort={sort} onSort={onSort} />
                 <TableHead>Summary</TableHead>
-                <TableHead className="w-8" />
+                <TableHead className="w-20">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -353,8 +368,25 @@ export function Scans() {
                           : scan.summary
                         : "--"}
                     </TableCell>
-                    <TableCell>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      {scan.status === "in_progress" ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                          onClick={() => cancelMutation.mutate(scan.id)}
+                          disabled={cancelMutation.isPending}
+                        >
+                          {cancelMutation.isPending ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Ban className="h-3 w-3" />
+                          )}
+                          <span className="ml-1">Stop</span>
+                        </Button>
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      )}
                     </TableCell>
                   </TableRow>
               ))}

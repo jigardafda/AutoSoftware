@@ -26,7 +26,6 @@ interface BranchSelectProps {
   value: string | null;
   onChange: (branch: string | null) => void;
   defaultBranchName?: string;
-  placeholder?: string;
   disabled?: boolean;
   size?: "sm" | "default";
   showIcon?: boolean;
@@ -38,7 +37,6 @@ export function BranchSelect({
   value,
   onChange,
   defaultBranchName,
-  placeholder = "Select branch...",
   disabled = false,
   size = "default",
   showIcon = true,

@@ -57,6 +57,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Markdown } from "@/components/ui/markdown";
 import { BranchSelect } from "@/components/BranchSelect";
+import { RefreshButton } from "@/components/RefreshButton";
 import { cn } from "@/lib/utils";
 
 // --- Helpers ---
@@ -671,15 +672,18 @@ export function TaskDetail() {
     <div className="space-y-6">
       {/* Back button + actions */}
       <div className="flex items-center justify-between">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-1 text-muted-foreground hover:text-foreground -ml-2"
-          onClick={() => navigate("/tasks")}
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Tasks
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1 text-muted-foreground hover:text-foreground -ml-2"
+            onClick={() => navigate("/tasks")}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Tasks
+          </Button>
+          <RefreshButton queryKeys={[["task", id]]} />
+        </div>
         <div className="flex items-center gap-2">
           {["failed", "cancelled"].includes(task.status) && (
             <Button
@@ -733,8 +737,8 @@ export function TaskDetail() {
           <Badge variant="outline" className={type.className}>
             {type.label}
           </Badge>
-          {/* Branch selector - editable for non-started tasks */}
-          {["pending", "planned", "planning", "awaiting_input"].includes(task.status) ? (
+          {/* Branch selector - only editable before planning starts */}
+          {task.status === "pending" ? (
             <BranchSelect
               branches={branches}
               value={task.targetBranch}
@@ -742,12 +746,12 @@ export function TaskDetail() {
               size="sm"
               className="h-7"
             />
-          ) : task.targetBranch ? (
+          ) : (
             <Badge variant="outline" className="gap-1">
               <GitBranch className="h-3 w-3" />
-              {task.targetBranch}
+              {task.targetBranch || "default"}
             </Badge>
-          ) : null}
+          )}
           {task.externalLink && (
             <ExternalSourceBadge externalLink={task.externalLink} />
           )}

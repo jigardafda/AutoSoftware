@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { GitBranch, LayoutGrid, List, Plus } from "lucide-react";
 import { api } from "@/lib/api";
 import { Pagination, paginate } from "@/components/Pagination";
+import { RefreshButton } from "@/components/RefreshButton";
 import { useSort, type SortConfig } from "@/hooks/useSort";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -133,7 +134,10 @@ export function Repos() {
     <div>
       {/* Header */}
       <div className="flex items-center justify-between gap-2 mb-6 flex-wrap">
-        <h2 className="text-2xl font-bold">Repositories</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold">Repositories</h2>
+          <RefreshButton queryKeys={["repos"]} />
+        </div>
         <div className="flex items-center gap-2">
           {/* View toggle */}
           <div className="flex items-center border rounded-md">

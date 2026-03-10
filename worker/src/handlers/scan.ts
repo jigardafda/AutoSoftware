@@ -248,6 +248,11 @@ If all new tasks are duplicates, return []. If none are duplicates, return all i
     await emitLog(scanResult.id, "step", `Creating ${newTasks.length} tasks...`);
 
     let tasksCreated = 0;
+    // Use the branch that was scanned (if different from default)
+    const taskTargetBranch = requestedBranch && requestedBranch !== repo.defaultBranch
+      ? requestedBranch
+      : null; // null means use repo's default branch
+
     for (const task of newTasks) {
       await prisma.task.create({
         data: {
@@ -259,6 +264,7 @@ If all new tasks are duplicates, return []. If none are duplicates, return all i
           priority: task.priority,
           source: "auto_scan",
           scanResultId: scanResult.id,
+          targetBranch: taskTargetBranch,
         },
       });
       tasksCreated++;

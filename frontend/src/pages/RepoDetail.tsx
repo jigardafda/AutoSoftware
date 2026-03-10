@@ -23,6 +23,7 @@ import {
   RotateCcw,
   X,
   BrainCircuit,
+  Settings2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FileBrowser } from "@/components/repos/FileBrowser";
@@ -37,6 +38,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -45,15 +54,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Pagination, paginate } from "@/components/Pagination";
 import { BranchSelect } from "@/components/BranchSelect";
+import { RefreshButton } from "@/components/RefreshButton";
 import {
   AreaChart,
   Area,
@@ -176,10 +179,15 @@ export function RepoDetail() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [tasksPage, setTasksPage] = useState(0);
   const [scansPage, setScansPage] = useState(0);
-  const [scanBranch, setScanBranch] = useState<string | null>(null);
   const [expandedScan, setExpandedScan] = useState<string | null>(null);
   const [scanLogs, setScanLogs] = useState<Record<string, any[]>>({});
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
+
+  // Dialog states
+  const [scanDialogOpen, setScanDialogOpen] = useState(false);
+  const [scanDialogBranch, setScanDialogBranch] = useState<string | null>(null);
+  const [defaultBranchDialogOpen, setDefaultBranchDialogOpen] = useState(false);
+  const [newDefaultBranch, setNewDefaultBranch] = useState<string | null>(null);
 
   const VALID_TABS = ["overview", "files", "tasks", "scans", "usage"] as const;
   const tab = useMemo(() => {
@@ -277,6 +285,17 @@ export function RepoDetail() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const updateDefaultBranchMutation = useMutation({
+    mutationFn: (defaultBranch: string) =>
+      api.repos.update(id!, { defaultBranch }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["repo-stats", id] });
+      setDefaultBranchDialogOpen(false);
+      toast.success("Default branch updated");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const toggleScanExpand = async (scanId: string) => {
     if (expandedScan === scanId) {
       setExpandedScan(null);
@@ -335,35 +354,43 @@ export function RepoDetail() {
             <h2 className="text-lg font-semibold truncate">{repo.fullName}</h2>
             <div className="flex items-center gap-2 mt-0.5">
               <StatusBadge status={repo.status} />
+              <button
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => {
+                  setNewDefaultBranch(repo.defaultBranch);
+                  setDefaultBranchDialogOpen(true);
+                }}
+              >
+                <GitBranch className="h-3 w-3" />
+                {repo.defaultBranch}
+                <Settings2 className="h-3 w-3 opacity-60" />
+              </button>
+              <span className="text-xs text-muted-foreground">|</span>
               <span className="text-xs text-muted-foreground">
-                Branch: {repo.defaultBranch} | Interval: {repo.scanInterval}min
+                Interval: {repo.scanInterval}min
               </span>
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <div className="flex items-center">
-            <BranchSelect
-              branches={branches}
-              value={scanBranch}
-              onChange={setScanBranch}
-              defaultBranchName={repo.defaultBranch}
-              placeholder="Branch to scan"
-              size="sm"
-              className="rounded-r-none border-r-0"
-            />
-            <Button
-              size="sm"
-              className="rounded-l-none"
-              onClick={() => scanMutation.mutate(scanBranch || undefined)}
-              disabled={scanMutation.isPending || repo.status === "scanning"}
-            >
-              {scanMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-              Scan
-            </Button>
-          </div>
+          <RefreshButton queryKeys={[["repo-stats", id], ["repo-branches", id]]} />
+          <Button
+            size="sm"
+            onClick={() => {
+              setScanDialogBranch(repo.defaultBranch);
+              setScanDialogOpen(true);
+            }}
+            disabled={scanMutation.isPending || repo.status === "scanning"}
+          >
+            {repo.status === "scanning" ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-1" />
+            ) : (
+              <Play className="h-4 w-4 mr-1" />
+            )}
+            Scan
+          </Button>
           <Button size="sm" variant="outline" onClick={() => toggleMutation.mutate(!repo.isActive)}>
-            {repo.isActive ? <><Pause className="h-4 w-4" /> Pause</> : <><Play className="h-4 w-4" /> Resume</>}
+            {repo.isActive ? <><Pause className="h-4 w-4 mr-1" /> Pause</> : <><Play className="h-4 w-4 mr-1" /> Resume</>}
           </Button>
           <ConfirmDeleteDialog
             title="Delete repository"
@@ -377,6 +404,84 @@ export function RepoDetail() {
           />
         </div>
       </div>
+
+      {/* Scan Branch Selection Dialog */}
+      <Dialog open={scanDialogOpen} onOpenChange={setScanDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Scan Repository</DialogTitle>
+            <DialogDescription>
+              Select which branch to scan for improvements and issues.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <label className="text-sm font-medium mb-2 block">Branch to scan</label>
+            <BranchSelect
+              branches={branches}
+              value={scanDialogBranch}
+              onChange={setScanDialogBranch}
+              defaultBranchName={repo.defaultBranch}
+              className="w-full"
+            />
+            <p className="text-xs text-muted-foreground mt-2">
+              Tasks created from this scan will target the selected branch.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setScanDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                scanMutation.mutate(scanDialogBranch || undefined);
+                setScanDialogOpen(false);
+              }}
+              disabled={scanMutation.isPending}
+            >
+              {scanMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+              Start Scan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Default Branch Settings Dialog */}
+      <Dialog open={defaultBranchDialogOpen} onOpenChange={setDefaultBranchDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Default Branch Settings</DialogTitle>
+            <DialogDescription>
+              Set the default branch for this repository. This branch will be pre-selected for scans and new tasks.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <label className="text-sm font-medium mb-2 block">Default branch</label>
+            <BranchSelect
+              branches={branches}
+              value={newDefaultBranch}
+              onChange={setNewDefaultBranch}
+              defaultBranchName={repo.defaultBranch}
+              className="w-full"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDefaultBranchDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (newDefaultBranch) {
+                  updateDefaultBranchMutation.mutate(newDefaultBranch);
+                }
+              }}
+              disabled={updateDefaultBranchMutation.isPending || !newDefaultBranch}
+            >
+              {updateDefaultBranchMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -674,7 +779,7 @@ export function RepoDetail() {
                             <p className="text-sm font-medium truncate max-w-[300px]">{task.title}</p>
                           </TableCell>
                           <TableCell onClick={(e) => e.stopPropagation()}>
-                            {["pending", "planned", "planning", "awaiting_input"].includes(task.status) ? (
+                            {task.status === "pending" ? (
                               <BranchSelect
                                 branches={branches}
                                 value={task.targetBranch}
@@ -683,13 +788,11 @@ export function RepoDetail() {
                                 size="sm"
                                 className="h-6 text-xs w-28"
                               />
-                            ) : task.targetBranch ? (
+                            ) : (
                               <span className="flex items-center gap-1 text-xs text-muted-foreground">
                                 <GitBranch className="h-3 w-3" />
-                                <span className="truncate max-w-[80px]">{task.targetBranch}</span>
+                                <span className="truncate max-w-[80px]">{task.targetBranch || "default"}</span>
                               </span>
-                            ) : (
-                              <span className="text-xs text-muted-foreground/50">default</span>
                             )}
                           </TableCell>
                           <TableCell>

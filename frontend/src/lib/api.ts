@@ -111,7 +111,7 @@ export const api = {
     get: (id: string) => request<any>(`/projects/${id}`),
     create: (body: { name: string; description?: string }) =>
       request<any>("/projects", { method: "POST", body: JSON.stringify(body) }),
-    update: (id: string, body: { name?: string; description?: string }) =>
+    update: (id: string, body: { name?: string; description?: string; defaultBranch?: string | null }) =>
       request<any>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     delete: (id: string) => request<any>(`/projects/${id}`, { method: "DELETE" }),
     stats: (id: string) => request<any>(`/projects/${id}/stats`),

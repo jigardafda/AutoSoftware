@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -11,9 +12,11 @@ import {
   Clock,
   Github,
   GitlabIcon,
+  Ban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { RefreshButton } from "@/components/RefreshButton";
 import {
   Card,
   CardContent,
@@ -168,6 +171,7 @@ function ScanDetailSkeleton() {
 export function ScanDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const logContainerRef = useRef<HTMLDivElement>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [lastLogId, setLastLogId] = useState<string | null>(null);
@@ -179,6 +183,16 @@ export function ScanDetail() {
     enabled: !!id,
     refetchInterval: (query) =>
       query.state.data?.status === "in_progress" ? 3000 : false,
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: () => api.scans.cancel(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scan", id] });
+      queryClient.invalidateQueries({ queryKey: ["scans"] });
+      toast.success("Scan cancelled");
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   // Initialize logs from scan data
@@ -257,16 +271,37 @@ export function ScanDetail() {
 
   return (
     <div className="space-y-6">
-      {/* Back button */}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="gap-1 text-muted-foreground hover:text-foreground -ml-2"
-        onClick={() => navigate("/scans")}
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to Scans
-      </Button>
+      {/* Navigation and actions */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1 text-muted-foreground hover:text-foreground -ml-2"
+            onClick={() => navigate("/scans")}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Scans
+          </Button>
+          <RefreshButton queryKeys={[["scan", id]]} />
+        </div>
+        {scan.status === "in_progress" && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-red-500 hover:text-red-600 hover:bg-red-500/10 border-red-500/30"
+            onClick={() => cancelMutation.mutate()}
+            disabled={cancelMutation.isPending}
+          >
+            {cancelMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-1" />
+            ) : (
+              <Ban className="h-4 w-4 mr-1" />
+            )}
+            Stop Scan
+          </Button>
+        )}
+      </div>
 
       {/* Header */}
       <div className="space-y-3">

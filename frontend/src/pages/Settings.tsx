@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/dialog";
 import { AddApiKeyDialog } from "@/components/settings/AddApiKeyDialog";
 import { IntegrationsTab } from "@/components/integrations/IntegrationsTab";
+import { RefreshButton } from "@/components/RefreshButton";
 import { toast } from "sonner";
 import {
   AreaChart,
@@ -747,7 +748,10 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Settings</h2>
+      <div className="flex items-center gap-3">
+        <h2 className="text-lg font-semibold">Settings</h2>
+        <RefreshButton queryKeys={["api-keys", "integrations"]} />
+      </div>
 
       <Tabs
         value={tab}

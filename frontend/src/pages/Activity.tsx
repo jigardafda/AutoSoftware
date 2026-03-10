@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
+import { RefreshButton } from "@/components/RefreshButton";
 
 type FilterType = "all" | "created" | "completed" | "failed" | "in_progress";
 
@@ -136,6 +137,7 @@ export function Activity() {
             {filteredEvents.length}
           </Badge>
         )}
+        <RefreshButton queryKeys={["tasks"]} />
       </div>
 
       {/* Filter bar */}

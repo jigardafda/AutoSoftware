@@ -1,16 +1,21 @@
-# AutoSoftware AI Roadmap Design
+# AutoSoftware AI + Platform Roadmap Design
 
 **Date:** 2026-03-10
 **Status:** Approved
 **Audience:** Public/Community (open-source)
 **Timeline:** 3 months (March–June 2026)
-**Focus:** Deeper AI capabilities
+**Focus:** Deeper AI capabilities + World-class platform experience
 
 ---
 
 ## Vision
 
-AutoSoftware is becoming the most intelligent code improvement platform. This roadmap outlines a 12-week sprint to dramatically enhance AI capabilities across analysis, execution, planning, and proactive intelligence.
+AutoSoftware is becoming the most intelligent, collaborative code improvement platform. This roadmap outlines a 12-week sprint with **two parallel tracks**:
+
+1. **🧠 AI Intelligence** — Smarter analysis, execution, planning, and learning
+2. **🎨 Platform Experience** — Multiplayer collaboration, visual canvas, mobile-first
+
+Inspired by [Agor](https://github.com/preset-io/agor)'s multiplayer spatial canvas approach.
 
 ---
 
@@ -18,37 +23,44 @@ AutoSoftware is becoming the most intelligent code improvement platform. This ro
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    AUTOSOFTWARE AI ROADMAP — Q2 2026                        │
+│                    AUTOSOFTWARE ROADMAP — Q2 2026                           │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │        MARCH              APRIL               MAY                JUNE       │
 │  ──────────────────────────────────────────────────────────────────────     │
 │                                                                             │
 │  PHASE 1: FOUNDATION     ██████████                                        │
-│  "See clearly"           Week 1─2                                          │
+│  AI: Smarter analysis    Week 1─2                                          │
+│  Platform: Real-time                                                       │
 │                                                                             │
 │  PHASE 2: INTELLIGENCE             ██████████                              │
-│  "Act precisely"                   Week 3─4                                │
+│  AI: Multi-file execution          Week 3─4                                │
+│  Platform: Agent swarm                                                     │
 │                                                                             │
 │  PHASE 3: DIALOGUE                           ██████████                    │
-│  "Understand deeply"                         Week 5─6                      │
+│  AI: Conversational planning                 Week 5─6                      │
+│  Platform: Session forking                                                 │
 │                                                                             │
 │  PHASE 4: FORESIGHT                                    ██████████          │
-│  "Predict & prevent"                                   Week 7─9            │
+│  AI: Proactive detection                               Week 7─9            │
+│  Platform: Spatial canvas                                                  │
 │                                                                             │
 │  PHASE 5: MASTERY                                               ██████████│
-│  "Learn & evolve"                                               Week 10─12 │
+│  AI: Learning & feedback                                        Week 10─12 │
+│  Platform: Mobile + notifications                                          │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-| Phase | Name | Duration | Theme |
-|-------|------|----------|-------|
-| 1 | Foundation | 2 weeks | Smarter analysis, fewer false positives |
-| 2 | Intelligence | 2 weeks | Multi-file execution, complex changes |
-| 3 | Dialogue | 2 weeks | Rich conversational planning |
-| 4 | Foresight | 2 weeks | Proactive detection & monitoring |
-| 5 | Mastery | 4 weeks | Learning, feedback loops, polish |
+| Phase | Name | Duration | AI Focus | Platform Focus |
+|-------|------|----------|----------|----------------|
+| 1 | Foundation | 2 weeks | Smarter analysis, security | Real-time infrastructure, presence |
+| 2 | Intelligence | 2 weeks | Multi-file execution | Agent swarm, parallel tasks |
+| 3 | Dialogue | 2 weeks | Conversational planning | Session forking, collaboration |
+| 4 | Foresight | 2 weeks | Proactive detection | Spatial canvas, zone triggers |
+| 5 | Mastery | 4 weeks | Learning, personalization | Mobile UI, notifications |
+
+**Total: 12 weeks (March → June 2026)**
 
 ---
 
@@ -56,9 +68,7 @@ AutoSoftware is becoming the most intelligent code improvement platform. This ro
 
 **"See Clearly" — Weeks 1-2**
 
-The AI becomes significantly better at understanding codebases and finding real issues.
-
-### Parallel Tracks
+### 🧠 AI Track
 
 #### Analysis Depth
 - Architectural pattern recognition (MVC, microservices, etc.)
@@ -67,7 +77,7 @@ The AI becomes significantly better at understanding codebases and finding real 
 - Code duplication finder
 
 #### Accuracy
-- Confidence scoring for each finding
+- Confidence scoring for each finding (1-10)
 - False positive reduction via context awareness
 - Severity calibration (critical vs. nitpick)
 - Language-specific rule tuning
@@ -84,11 +94,25 @@ The AI becomes significantly better at understanding codebases and finding real 
 - Inefficient algorithm flags
 - Bundle size / import analysis
 
+### 🎨 Platform Track
+
+#### Real-Time Infrastructure
+- WebSocket connection layer (Socket.io or native WS)
+- Live task status updates (no refresh needed)
+- Real-time scan progress streaming
+- Connection state indicators (online/offline/reconnecting)
+
+#### Team Presence
+- User presence indicators ("Sarah is online")
+- "Currently viewing" badges on tasks/repos
+- Activity pulse (who's active right now)
+- Team member avatars across UI
+
 ### Key Deliverables
 - [ ] Scan results include confidence scores (1-10)
 - [ ] Security-focused scan mode
-- [ ] Findings grouped by category with severity
-- [ ] "Why this matters" explanations on each issue
+- [ ] WebSocket infrastructure operational
+- [ ] Team presence visible across UI
 
 ---
 
@@ -96,9 +120,7 @@ The AI becomes significantly better at understanding codebases and finding real 
 
 **"Act Precisely" — Weeks 3-4**
 
-The AI executes complex changes reliably across multiple files with sophisticated understanding.
-
-### Parallel Tracks
+### 🧠 AI Track
 
 #### Multi-File Operations
 - Coordinated changes across 10+ files
@@ -107,7 +129,7 @@ The AI executes complex changes reliably across multiple files with sophisticate
 - Database migration generation
 
 #### Execution Quality
-- Pre-execution impact analysis
+- Pre-execution impact analysis ("dry run")
 - Rollback-safe change batching
 - Test generation for changes
 - Lint/format compliance check before commit
@@ -120,15 +142,35 @@ The AI executes complex changes reliably across multiple files with sophisticate
 
 #### Context Awareness
 - Respect existing code style
-- Follow project conventions (from CLAUDE.md, .editorconfig)
+- Follow project conventions (CLAUDE.md, .editorconfig)
 - Use existing utilities instead of reinventing
 - Match naming patterns
 
+### 🎨 Platform Track
+
+#### Agent Swarm
+- Parallel task execution (run 5+ tasks simultaneously)
+- Agent coordination via internal messaging (MCP-style)
+- Cross-repo synchronized refactoring
+- "Fix this in all microservices" batch operations
+
+#### Isolated Environments
+- Auto-managed unique ports per task execution
+- Template-based environment configs
+- One-click environment start/stop
+- Health monitoring for running services
+
+#### Live Execution View
+- Real-time agent activity feed
+- Live file change preview as agent works
+- Terminal output streaming
+- "Agent is thinking..." indicators
+
 ### Key Deliverables
-- [ ] "Dry run" mode showing proposed changes before execution
-- [ ] Execution confidence indicator (low/medium/high)
+- [ ] "Dry run" mode operational
+- [ ] Parallel task execution (5+ simultaneous)
+- [ ] Live execution streaming in UI
 - [ ] Auto-generated tests for each fix
-- [ ] Change impact summary (files touched, lines changed)
 
 ---
 
@@ -136,9 +178,7 @@ The AI executes complex changes reliably across multiple files with sophisticate
 
 **"Understand Deeply" — Weeks 5-6**
 
-The AI becomes a true collaborator — understanding intent, asking smart questions, and explaining tradeoffs.
-
-### Parallel Tracks
+### 🧠 AI Track
 
 #### Smart Clarification
 - Contextual questions based on codebase
@@ -148,7 +188,7 @@ The AI becomes a true collaborator — understanding intent, asking smart questi
 
 #### Approach Exploration
 - Proposes 2-3 implementation approaches
-- Explains tradeoffs (performance vs. readability, etc.)
+- Explains tradeoffs (performance vs. readability)
 - Recommends best approach with reasoning
 - Allows "what if" exploration
 
@@ -164,11 +204,31 @@ The AI becomes a true collaborator — understanding intent, asking smart questi
 - "I'm stuck because..." honest blockers
 - Confidence indicators per decision
 
+### 🎨 Platform Track
+
+#### Session Forking
+- Fork any task to explore alternative approaches
+- Visual session tree (parent/child relationships)
+- Side-by-side plan comparison view
+- Merge best parts from different forks
+
+#### Task Genealogy
+- Visual tree of scan → tasks → subtasks
+- "Spawned from" relationship indicators
+- Collapse/expand task hierarchies
+- Filter by lineage
+
+#### Collaborative Planning
+- Real-time cursors in planning UI
+- Team comments on approach options
+- Voting on preferred approaches
+- "@mention" teammates for input
+
 ### Key Deliverables
-- [ ] Rich planning UI with approach comparison cards
-- [ ] "Thinking out loud" mode showing AI reasoning
-- [ ] Task threads — ongoing conversation per task
-- [ ] Voice/audio input for task descriptions (stretch)
+- [ ] Approach comparison cards in UI
+- [ ] Session forking operational
+- [ ] Visual task genealogy tree
+- [ ] Real-time collaborative cursors
 
 ---
 
@@ -176,9 +236,7 @@ The AI becomes a true collaborator — understanding intent, asking smart questi
 
 **"Predict & Prevent" — Weeks 7-9**
 
-The AI shifts from reactive to proactive — catching issues before they become problems.
-
-### Parallel Tracks
+### 🧠 AI Track
 
 #### Predictive Analysis
 - "This will break when..." warnings
@@ -204,11 +262,31 @@ The AI shifts from reactive to proactive — catching issues before they become 
 - "Other projects solved this with..."
 - Scheduled improvement recommendations
 
+### 🎨 Platform Track
+
+#### Spatial Canvas
+- Figma-style board for organizing repos, tasks, scans
+- Drag-and-drop spatial arrangement
+- Zoom/pan infinite canvas
+- Board templates (per project, per sprint, etc.)
+
+#### Zone Triggers
+- Define zones that trigger actions when items dropped
+- Kanban-style pipelines (Analyze → Develop → Review → Deploy)
+- Custom workflow automation
+- Visual pipeline progress indicators
+
+#### GitHub Deep Integration
+- Auto-inject issue/PR context into tasks
+- Linked worktrees show GitHub status
+- PR review comments sync back to tasks
+- Issue labels → task priority mapping
+
 ### Key Deliverables
 - [ ] Health score badge for each repository
-- [ ] Weekly AI digest email (optional)
-- [ ] "Predicted issues" section in dashboard
-- [ ] Dependency update PRs with risk assessment
+- [ ] Spatial canvas with drag-and-drop
+- [ ] Zone triggers operational
+- [ ] Kanban workflow pipelines
 
 ---
 
@@ -216,9 +294,7 @@ The AI shifts from reactive to proactive — catching issues before they become 
 
 **"Learn & Evolve" — Weeks 10-12**
 
-The AI becomes a learning system — improving from feedback and building institutional knowledge.
-
-### Parallel Tracks
+### 🧠 AI Track
 
 #### Feedback Loops
 - Learn from PR review comments
@@ -244,74 +320,120 @@ The AI becomes a learning system — improving from feedback and building instit
 - Execution success rate monitoring
 - Automatic prompt refinement
 
+### 🎨 Platform Track
+
+#### Mobile Experience
+- Fully responsive mobile UI
+- Mobile-optimized task cards
+- Swipe gestures for quick actions
+- Touch-friendly planning interface
+
+#### Push Notifications
+- Scan completion alerts
+- Task status change notifications
+- "Agent needs input" alerts
+- Daily/weekly digest emails
+
+#### Mobile Actions
+- Approve/reject plans from phone
+- Quick task creation via mobile
+- Voice input for task descriptions
+- Photo-to-task (screenshot a bug)
+
+#### Team Coordination
+- RTS-style team activity view
+- "Who's working on what" dashboard
+- Workload balancing visualization
+- Delegation with drag-and-drop
+
 ### Key Deliverables
 - [ ] Feedback buttons on every AI output
-- [ ] "AI learned from this" indicators
-- [ ] Project-level AI settings/preferences
-- [ ] Monthly accuracy report
+- [ ] Mobile-responsive UI complete
+- [ ] Push notifications operational
+- [ ] Team coordination dashboard
 
 ---
 
-## Presentation Format
+## Architecture Considerations
 
-### Primary: `ROADMAP.md` in repo root
+### New Infrastructure Required
 
-```markdown
-# AutoSoftware Roadmap
+| Feature | Technology Options |
+|---------|-------------------|
+| WebSockets | Socket.io, native WS, Ably |
+| Spatial Canvas | React Flow, Fabric.js, custom Canvas |
+| Mobile | Progressive Web App (PWA) |
+| Notifications | Firebase FCM, OneSignal, native |
+| Presence | Redis pub/sub, WebSocket rooms |
 
-> Building the most intelligent code improvement platform
+### Database Schema Additions
 
-## Vision
-[One paragraph on the AI-first direction]
+```prisma
+// Session forking
+model TaskFork {
+  id           String   @id @default(cuid())
+  parentTaskId String
+  childTaskId  String
+  forkReason   String?
+  createdAt    DateTime @default(now())
+}
 
-## Timeline Overview
-[ASCII timeline graphic]
+// Spatial canvas
+model BoardItem {
+  id        String  @id @default(cuid())
+  projectId String
+  itemType  String  // "task" | "repo" | "scan"
+  itemId    String
+  x         Float
+  y         Float
+  width     Float?
+  height    Float?
+}
 
-## Phases
+// Zone triggers
+model WorkflowZone {
+  id          String  @id @default(cuid())
+  projectId   String
+  name        String
+  triggerType String  // "on_drop" | "on_status_change"
+  action      String  // "start_scan" | "execute_task" | etc
+  config      Json    @default("{}")
+}
 
-### Phase 1: Foundation — "See Clearly" (Mar 2026)
-[Features as checklist with status: planned, in progress, shipped]
+// Team presence
+model UserPresence {
+  id        String   @id @default(cuid())
+  userId    String
+  location  String   // "task:123" | "repo:456" | "board:789"
+  status    String   // "viewing" | "editing" | "idle"
+  updatedAt DateTime @updatedAt
+}
 
-### Phase 2: Intelligence — "Act Precisely" (Apr 2026)
-...
-
-## Contributing
-[How community can help with each phase]
-
-## Changelog
-[Link to CHANGELOG.md for shipped features]
+// Notification preferences
+model NotificationPrefs {
+  id             String  @id @default(cuid())
+  userId         String  @unique
+  pushEnabled    Boolean @default(true)
+  emailDigest    String  @default("daily") // "none" | "daily" | "weekly"
+  scanComplete   Boolean @default(true)
+  taskStatusChange Boolean @default(true)
+  agentNeedsInput Boolean @default(true)
+}
 ```
 
-### Supporting Assets
+### File Changes by Phase
 
-| Item | Purpose |
-|------|---------|
-| GitHub Project Board | Visual kanban tracking each phase |
-| GitHub Milestones | Link issues/PRs to phases |
-| Status badges | Phase progress in README |
-| Discussion thread | Community feedback on priorities |
-
-### Update Cadence
-
-- Checkboxes updated as features ship
-- Phase status updated at phase boundaries
-- Community changelog post at each phase completion
+| Phase | Backend | Worker | Frontend |
+|-------|---------|--------|----------|
+| 1 | WebSocket server, presence API | — | WS client, presence UI |
+| 2 | Parallel job queue | Agent swarm handler | Live execution view |
+| 3 | Fork API, genealogy API | — | Session tree, collab cursors |
+| 4 | Health metrics API | Predictive analysis | Canvas, zone triggers |
+| 5 | Notification service | — | Mobile UI, PWA |
 
 ---
 
-## Implementation Notes
-
-This design document describes the WHAT. The implementation plan (to follow) will detail the HOW — specific technical changes, file modifications, and build sequence for each phase.
-
-### Architecture Considerations
-
-- Phase 1 (Analysis) primarily affects `worker/src/handlers/scan.ts` and prompt engineering
-- Phase 2 (Execution) extends `worker/src/handlers/execute.ts` with dry-run and multi-file support
-- Phase 3 (Dialogue) enhances `worker/src/handlers/plan.ts` and frontend planning UI
-- Phase 4 (Foresight) requires new scheduled jobs and dashboard components
-- Phase 5 (Mastery) adds feedback storage (new DB models) and learning infrastructure
-
-### Success Metrics
+## Success Metrics
 
 | Metric | Baseline | Target |
 |--------|----------|--------|
@@ -319,3 +441,15 @@ This design document describes the WHAT. The implementation plan (to follow) wil
 | Execution success rate | TBD | >85% |
 | User satisfaction (thumbs up) | N/A | >80% |
 | PR merge rate | TBD | >70% |
+| Parallel task throughput | 1 | 5+ simultaneous |
+| Mobile usage | 0% | >20% of sessions |
+| Real-time adoption | N/A | >80% WebSocket connected |
+
+---
+
+## Inspiration & References
+
+- **[Agor](https://github.com/preset-io/agor)** — Multiplayer spatial canvas, agent swarm, zone triggers
+- **Figma** — Real-time cursors, infinite canvas, collaboration patterns
+- **Linear** — Modern task management UX, keyboard-first design
+- **Vercel** — Clean deployment status, real-time logs

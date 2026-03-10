@@ -112,6 +112,7 @@ export interface ConnectRepoInput {
 export interface UpdateRepoInput {
   isActive?: boolean;
   scanInterval?: number;
+  defaultBranch?: string;
   settings?: Record<string, unknown>;
 }
 

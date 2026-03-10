@@ -87,7 +87,7 @@ export function ActivityFeed({ tasks, repos }: ActivityFeedProps) {
           id: `scan-${repo.id}`,
           icon: Search,
           iconClass: "text-muted-foreground",
-          title: `Scan completed on ${repo.name}`,
+          title: `Scan completed on ${repo.fullName}`,
           detail: repo.provider || "",
           time: relativeTime(repo.lastScannedAt),
           sortDate: repo.lastScannedAt,

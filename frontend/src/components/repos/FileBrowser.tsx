@@ -18,7 +18,6 @@ export function FileBrowser({ repoId, initialPath, initialLine }: FileBrowserPro
     initialPath ?? null
   );
   const [highlightLine, setHighlightLine] = useState<number | undefined>(initialLine);
-  const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
 
   // Fetch available branches
@@ -28,9 +27,8 @@ export function FileBrowser({ repoId, initialPath, initialLine }: FileBrowserPro
     staleTime: 30_000,
   });
 
+  // Initialize selected branch when FileTree reports its detected branch
   const handleBranchChange = useCallback((b: string | null) => {
-    setCurrentBranch(b);
-    // Initialize selected branch on first load
     if (!selectedBranch && b) {
       setSelectedBranch(b);
     }

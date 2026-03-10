@@ -24,7 +24,10 @@ export async function cloneOrPullRepo(
 
   if (existsSync(path.join(repoDir, ".git"))) {
     const repoGit = simpleGit(repoDir);
-    await repoGit.pull();
+    // Use fetch instead of pull to avoid issues with detached HEAD state
+    // (e.g., after planning checked out origin/branch)
+    // Callers will checkout the specific branch they need
+    await repoGit.fetch("origin");
   } else {
     await git.clone(authedUrl, repoDir);
   }

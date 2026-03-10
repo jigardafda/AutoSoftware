@@ -22,7 +22,6 @@ import {
   Unplug,
   Link2,
   Import,
-  Settings,
   Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -46,6 +45,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pagination, paginate } from "@/components/Pagination";
+import { RefreshButton } from "@/components/RefreshButton";
 import { AddRepoToProjectDialog } from "@/components/projects/AddRepoToProjectDialog";
 import { DocumentEditor } from "@/components/projects/DocumentEditor";
 import { ProviderIcon } from "@/components/integrations/ProviderIcon";
@@ -188,7 +188,7 @@ export function ProjectDetail() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (body: { name?: string; description?: string }) =>
+    mutationFn: (body: { name?: string; description?: string; defaultBranch?: string | null }) =>
       api.projects.update(id!, body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["project", id] });
@@ -368,16 +368,19 @@ export function ProjectDetail() {
             </div>
           </div>
         </div>
-        <ConfirmDeleteDialog
-          title="Delete project"
-          description="This will permanently delete this project. Repositories will not be affected."
-          onConfirm={() => deleteMutation.mutate()}
-          trigger={
-            <Button size="sm" variant="destructive">
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          }
-        />
+        <div className="flex items-center gap-2 shrink-0">
+          <RefreshButton queryKeys={[["project-stats", id]]} />
+          <ConfirmDeleteDialog
+            title="Delete project"
+            description="This will permanently delete this project. Repositories will not be affected."
+            onConfirm={() => deleteMutation.mutate()}
+            trigger={
+              <Button size="sm" variant="destructive">
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            }
+          />
+        </div>
       </div>
 
       {/* Stats Cards */}

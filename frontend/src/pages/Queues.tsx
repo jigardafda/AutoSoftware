@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
+import { RefreshButton } from "@/components/RefreshButton";
 
 type JobState = "created" | "retry" | "active" | "completed" | "cancelled" | "failed";
 
@@ -52,14 +53,19 @@ function CountBadge({ label, count, variant }: { label: string; count: number; v
 
 function timeAgo(date: string | null): string {
   if (!date) return "-";
-  const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  const diff = Date.now() - new Date(date).getTime();
+  const absDiff = Math.abs(diff);
+  const seconds = Math.floor(absDiff / 1000);
+
+  // Format the relative time
+  let relative: string;
+  if (seconds < 60) relative = `${seconds}s`;
+  else if (seconds < 3600) relative = `${Math.floor(seconds / 60)}m`;
+  else if (seconds < 86400) relative = `${Math.floor(seconds / 3600)}h`;
+  else relative = `${Math.floor(seconds / 86400)}d`;
+
+  // Show "ago" for past, "ahead" for future (indicates timezone issue)
+  return diff < 0 ? `in ${relative}` : `${relative} ago`;
 }
 
 export function Queues() {
@@ -118,7 +124,10 @@ export function Queues() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Queues</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold">Queues</h2>
+          <RefreshButton queryKeys={["queues", ["queue-jobs", selectedQueue, stateFilter, page]]} />
+        </div>
         <span className="text-sm text-muted-foreground">Auto-refreshes every 5s</span>
       </div>
 

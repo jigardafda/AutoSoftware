@@ -46,8 +46,8 @@ export const queueRoutes: FastifyPluginAsync = async (app) => {
       retryLimit: q.retry_limit,
       expireSeconds: q.expire_seconds,
       deadLetter: q.dead_letter,
-      createdOn: q.created_on,
-      updatedOn: q.updated_on,
+      createdOn: q.created_on instanceof Date ? q.created_on.toISOString() : q.created_on,
+      updatedOn: q.updated_on instanceof Date ? q.updated_on.toISOString() : q.updated_on,
       counts: countMap[q.name] || { created: 0, retry: 0, active: 0, completed: 0, cancelled: 0, failed: 0 },
     }));
 
@@ -99,9 +99,9 @@ export const queueRoutes: FastifyPluginAsync = async (app) => {
         output: j.output,
         retryCount: j.retry_count,
         retryLimit: j.retry_limit,
-        createdOn: j.created_on,
-        startedOn: j.started_on,
-        completedOn: j.completed_on,
+        createdOn: j.created_on instanceof Date ? j.created_on.toISOString() : j.created_on,
+        startedOn: j.started_on instanceof Date ? j.started_on.toISOString() : j.started_on,
+        completedOn: j.completed_on instanceof Date ? j.completed_on.toISOString() : j.completed_on,
         expireSeconds: j.expire_seconds,
         singletonKey: j.singleton_key,
       }));
