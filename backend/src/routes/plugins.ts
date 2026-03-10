@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "../db.js";
+import { downloadPlugin, removePluginCache, syncPlugin, getPluginCacheInfo } from "../services/plugin-manager.js";
 
 // Official Anthropic plugin marketplace URL
 const OFFICIAL_MARKETPLACE_URL =
@@ -43,10 +44,12 @@ interface PluginManifest {
 
 async function fetchMarketplace(url: string): Promise<MarketplacePlugin[]> {
   try {
+    console.log(`[Plugins] Fetching marketplace from: ${url}`);
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const rawPlugins: RawMarketplacePlugin[] = data.plugins || [];
+    console.log(`[Plugins] Found ${rawPlugins.length} raw plugins`);
 
     // Determine base URL for relative sources
     const baseUrl = url.replace(/\/[^/]+$/, ""); // Remove filename
@@ -54,7 +57,7 @@ async function fetchMarketplace(url: string): Promise<MarketplacePlugin[]> {
       ? url.replace("/raw/", "/blob/").replace("raw.githubusercontent.com", "github.com").replace(/\/[^/]+\.json$/, "")
       : "";
 
-    return rawPlugins.map((p) => {
+    const mappedPlugins = rawPlugins.map((p) => {
       // Determine repo URL from source
       let repoUrl: string;
       if (typeof p.source === "object" && p.source.url) {
@@ -82,8 +85,10 @@ async function fetchMarketplace(url: string): Promise<MarketplacePlugin[]> {
         tags: p.tags,
       };
     });
+    console.log(`[Plugins] Mapped ${mappedPlugins.length} plugins`);
+    return mappedPlugins;
   } catch (err) {
-    console.error(`Failed to fetch marketplace from ${url}:`, err);
+    console.error(`[Plugins] Failed to fetch marketplace from ${url}:`, err);
     return [];
   }
 }
@@ -340,6 +345,17 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(400).send({ error: { message: "Could not fetch plugin manifest" } });
     }
 
+    // Download plugin to local cache
+    let cachePath: string | null = null;
+    try {
+      cachePath = await downloadPlugin(pluginId, repoUrl);
+    } catch (err) {
+      console.error(`Failed to download plugin ${pluginId}:`, err);
+      return reply.code(500).send({
+        error: { message: `Failed to download plugin: ${err instanceof Error ? err.message : "Unknown error"}` }
+      });
+    }
+
     const plugin = await prisma.installedPlugin.create({
       data: {
         userId: request.userId,
@@ -357,7 +373,7 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
       },
     });
 
-    return { data: plugin };
+    return { data: { ...plugin, cachePath } };
   });
 
   // GET /plugins/:id - get plugin details
@@ -426,6 +442,18 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(404).send({ error: { message: "Plugin not found" } });
     }
 
+    // Re-download/update plugin cache
+    try {
+      await syncPlugin(plugin.pluginId, plugin.repoUrl);
+    } catch (err) {
+      console.error(`Failed to sync plugin ${plugin.pluginId}:`, err);
+      await prisma.installedPlugin.update({
+        where: { id },
+        data: { lastError: `Failed to sync: ${err instanceof Error ? err.message : "Unknown error"}` },
+      });
+      return reply.code(500).send({ error: { message: "Failed to sync plugin files" } });
+    }
+
     const manifest = await fetchPluginManifest(plugin.repoUrl);
     if (!manifest) {
       await prisma.installedPlugin.update({
@@ -464,6 +492,37 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
     }
 
     await prisma.installedPlugin.delete({ where: { id } });
+
+    // Check if any other installations exist for this plugin
+    const otherInstalls = await prisma.installedPlugin.count({
+      where: { pluginId: plugin.pluginId },
+    });
+
+    // If no other installations exist, clean up the cache
+    if (otherInstalls === 0) {
+      try {
+        await removePluginCache(plugin.pluginId);
+      } catch (err) {
+        console.warn(`Failed to remove plugin cache for ${plugin.pluginId}:`, err);
+        // Don't fail the request, cache cleanup is best-effort
+      }
+    }
+
     return { data: { success: true } };
+  });
+
+  // GET /plugins/:id/cache - get plugin cache info
+  app.get<{ Params: { id: string } }>("/:id/cache", async (request, reply) => {
+    const { id } = request.params;
+
+    const plugin = await prisma.installedPlugin.findFirst({
+      where: { id, userId: request.userId },
+    });
+    if (!plugin) {
+      return reply.code(404).send({ error: { message: "Plugin not found" } });
+    }
+
+    const cacheInfo = await getPluginCacheInfo(plugin.pluginId);
+    return { data: cacheInfo };
   });
 };

@@ -248,7 +248,10 @@ export const api = {
 
     // Browse & Install
     browse: (params?: { search?: string; category?: string }) => {
-      const qs = params ? `?${new URLSearchParams(params as Record<string, string>)}` : "";
+      const filtered = Object.fromEntries(
+        Object.entries(params || {}).filter(([, v]) => v !== undefined && v !== "")
+      ) as Record<string, string>;
+      const qs = Object.keys(filtered).length ? `?${new URLSearchParams(filtered)}` : "";
       return request<any[]>(`/plugins/browse${qs}`);
     },
     install: (body: { pluginId: string; repoUrl: string; scope?: string; projectId?: string }) =>

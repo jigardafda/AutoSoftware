@@ -170,6 +170,11 @@ export async function simpleQueryWithUsage(
   return result;
 }
 
+interface PluginPath {
+  type: "local";
+  path: string;
+}
+
 interface AgentQueryConfig {
   prompt: string;
   options: {
@@ -180,6 +185,7 @@ interface AgentQueryConfig {
     cwd?: string;
     systemPrompt?: string;
     model?: string;
+    plugins?: PluginPath[];
   };
 }
 

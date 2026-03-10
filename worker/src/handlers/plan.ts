@@ -5,6 +5,7 @@ import { config } from "../config.js";
 import { getProjectContext } from "../services/project-context.js";
 import { resolveAuth, setupAgentSdkAuth, isValidAuth } from "../services/api-key-resolver.js";
 import { agentQueryWithUsage } from "../services/claude-query.js";
+import { getInstalledPluginPaths } from "../services/plugin-manager.js";
 import { getBoss } from "../boss.js";
 import { JOB_NAMES } from "@autosoftware/shared";
 
@@ -131,6 +132,12 @@ export async function handleTaskPlanning(jobs: { data: { taskId: string } }[]) {
 
     const projectContext = await getProjectContext(repo.id, task.projectId);
 
+    // Get installed plugins for this user/project
+    const pluginPaths = await getInstalledPluginPaths(repo.userId, task.projectId);
+    if (pluginPaths.length > 0) {
+      console.log(`Loaded ${pluginPaths.length} plugins for planning task ${taskId}`);
+    }
+
     // Build previous answers context from all rounds
     let previousAnswersContext = "";
     if (task.planningQuestions.length > 0) {
@@ -213,11 +220,13 @@ The \`affectedFiles\` array MUST list every file that will likely be created, mo
       {
         prompt,
         options: {
-          allowedTools: ["Read", "Glob", "Grep", "Bash"],
+          allowedTools: ["Read", "Glob", "Grep", "Bash", "Skill"],
           permissionMode: "bypassPermissions",
           maxTurns: 20,
           maxBudgetUsd: userBudgets.planBudget,
           cwd: repoDir,
+          // Load installed plugins
+          ...(pluginPaths.length > 0 && { plugins: pluginPaths }),
         },
       },
       {

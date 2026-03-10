@@ -477,18 +477,24 @@ function InstallDialog({
           {scope === "project" && (
             <div className="space-y-2">
               <label className="text-sm font-medium">Select Project</label>
-              <Select value={projectId} onValueChange={setProjectId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose a project" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((p: any) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {projects.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-2">
+                  No projects found. Create a project first or use Global scope.
+                </p>
+              ) : (
+                <Select value={projectId} onValueChange={setProjectId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projects.map((p: any) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
           )}
         </div>
@@ -598,7 +604,7 @@ export function Plugins() {
 
   const { data: availablePlugins = [], isLoading: loadingBrowse } = useQuery({
     queryKey: ["plugins", "browse", search],
-    queryFn: () => api.plugins.browse({ search: search || undefined }),
+    queryFn: () => api.plugins.browse(search ? { search } : {}),
     enabled: marketplaces.length > 0,
   });
 
@@ -756,7 +762,7 @@ export function Plugins() {
               </div>
             </div>
 
-            {loadingBrowse ? (
+            {loadingBrowse || loadingMarketplaces ? (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {Array.from({ length: 6 }).map((_, i) => (
                   <Card key={i}>
@@ -776,6 +782,18 @@ export function Plugins() {
                   </Card>
                 ))}
               </div>
+            ) : marketplaces.length === 0 ? (
+              <EmptyState
+                icon={Store}
+                title="No marketplaces configured"
+                description="Add a marketplace to discover plugins"
+                action={
+                  <Button onClick={() => addOfficialMutation.mutate()}>
+                    <Package className="h-4 w-4 mr-1" />
+                    Add Official Marketplace
+                  </Button>
+                }
+              />
             ) : availablePlugins.length === 0 ? (
               <EmptyState
                 icon={Puzzle}

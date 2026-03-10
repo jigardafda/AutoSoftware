@@ -6,6 +6,7 @@ import { config } from "../config.js";
 import { getProjectContext } from "../services/project-context.js";
 import { resolveAuth, setupAgentSdkAuth, isValidAuth } from "../services/api-key-resolver.js";
 import { agentQueryWithUsage } from "../services/claude-query.js";
+import { getInstalledPluginPaths } from "../services/plugin-manager.js";
 
 interface UserSettings {
   scanBudget?: number;
@@ -109,6 +110,12 @@ export async function handleTaskExecution(jobs: { data: { taskId: string } }[]) 
 
     const projectContext = await getProjectContext(repo.id, task.projectId);
 
+    // Get installed plugins for this user/project
+    const pluginPaths = await getInstalledPluginPaths(repo.userId, task.projectId);
+    if (pluginPaths.length > 0) {
+      console.log(`Loaded ${pluginPaths.length} plugins for task ${taskId}`);
+    }
+
     const implementationInstructions = task.enhancedPlan || task.description;
 
     const executePrompt = `${projectContext ? projectContext + "\n---\n\n" : ""}You are an expert software engineer. Implement the following task:
@@ -138,12 +145,14 @@ ${implementationInstructions}
         options: {
           allowedTools: [
             "Read", "Edit", "Write", "Bash", "Glob", "Grep",
-            "WebSearch", "WebFetch", "Agent",
+            "WebSearch", "WebFetch", "Agent", "Skill",
           ],
           permissionMode: "bypassPermissions",
           maxTurns: 60,
           maxBudgetUsd: userBudgets.taskBudget,
           cwd: worktreeDir,
+          // Load installed plugins
+          ...(pluginPaths.length > 0 && { plugins: pluginPaths }),
         },
       },
       {
