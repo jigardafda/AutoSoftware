@@ -3,7 +3,7 @@ export type RepoStatus = "idle" | "scanning" | "error";
 export type TaskType = "improvement" | "bugfix" | "feature" | "refactor" | "security";
 export type TaskPriority = "low" | "medium" | "high" | "critical";
 export type TaskStatus = "planning" | "awaiting_input" | "planned" | "pending" | "in_progress" | "completed" | "failed" | "cancelled";
-export type TaskSource = "auto_scan" | "manual" | "external_import";
+export type TaskSource = "auto_scan" | "manual" | "external_import" | "embed";
 export type ScanStatus = "in_progress" | "completed" | "failed";
 
 export interface UserDTO {
@@ -192,4 +192,73 @@ export interface IntegrationLinkDTO {
   lastSyncedAt: string | null;
   importCount: number;
   integration?: { provider: IntegrationProvider; displayName: string };
+}
+
+// --- Embed types ---
+
+export type EmbedScreeningStatus = "pending" | "screening" | "needs_input" | "scored" | "approved" | "rejected";
+
+export interface EmbedConfigDTO {
+  id: string;
+  projectId: string;
+  enabled: boolean;
+  title: string;
+  welcomeMessage: string | null;
+  logoUrl: string | null;
+  primaryColor: string;
+  backgroundColor: string;
+  textColor: string;
+  borderRadius: number;
+  fontFamily: string;
+  scoreThreshold: number;
+  maxFileSize: number;
+  maxTotalSize: number;
+  allowedFileTypes: string[];
+  language: string;
+}
+
+export interface EmbedSubmissionDTO {
+  id: string;
+  projectId: string;
+  title: string;
+  description: string;
+  inputMethod: string;
+  screeningStatus: EmbedScreeningStatus;
+  screeningScore: number | null;
+  screeningReason: string | null;
+  clarificationRound: number;
+  taskId: string | null;
+  attachments: { filename: string; mimeType: string; size: number }[];
+  questions?: EmbedQuestionDTO[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmbedQuestionDTO {
+  id: string;
+  questionKey: string;
+  round: number;
+  label: string;
+  type: "select" | "multi_select" | "confirm" | "text";
+  options: { value: string; label: string }[];
+  answer: string | string[] | boolean | null;
+  required: boolean;
+  sortOrder: number;
+}
+
+export interface UpdateEmbedConfigInput {
+  enabled?: boolean;
+  title?: string;
+  welcomeMessage?: string | null;
+  logoUrl?: string | null;
+  primaryColor?: string;
+  backgroundColor?: string;
+  textColor?: string;
+  borderRadius?: number;
+  fontFamily?: string;
+  scoreThreshold?: number;
+  maxFileSize?: number;
+  maxTotalSize?: number;
+  allowedFileTypes?: string[];
+  language?: string;
 }
