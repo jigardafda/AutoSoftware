@@ -73,10 +73,26 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ ids }),
       }),
+    retry: (id: string) =>
+      request<{ success: boolean }>(`/tasks/${id}/retry`, { method: "POST" }),
+    bulkRetry: (ids: string[]) =>
+      request<{ retried: number }>("/tasks/bulk-retry", {
+        method: "POST",
+        body: JSON.stringify({ ids }),
+      }),
+    bulkPlan: (ids: string[]) =>
+      request<{ planned: number }>("/tasks/bulk-plan", {
+        method: "POST",
+        body: JSON.stringify({ ids }),
+      }),
     submitAnswers: (id: string, body: { answers: Record<string, any> }) =>
       request<any>(`/tasks/${id}/answers`, { method: "POST", body: JSON.stringify(body) }),
     startPlanning: (id: string) =>
       request<any>(`/tasks/${id}/plan`, { method: "POST" }),
+    logs: (id: string, after?: string) => {
+      const qs = after ? `?after=${encodeURIComponent(after)}` : "";
+      return request<any[]>(`/tasks/${id}/logs${qs}`);
+    },
   },
   projects: {
     list: () => request<any[]>("/projects"),

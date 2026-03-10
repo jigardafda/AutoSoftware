@@ -4,6 +4,20 @@ import { config } from "../config.js";
 import { encrypt, decrypt, makeKeyPrefix, estimateCost } from "@autosoftware/shared";
 import Anthropic from "@anthropic-ai/sdk";
 
+type ClaudeKeyType = "api_key" | "oauth_token";
+
+/**
+ * Detect whether a key/token is an OAuth token or API key based on prefix.
+ * OAuth tokens start with "sk-ant-oat" (e.g., sk-ant-oat01-...)
+ * API keys start with "sk-ant-api" (e.g., sk-ant-api03-...)
+ */
+function detectKeyType(key: string): ClaudeKeyType {
+  if (key.startsWith("sk-ant-oat")) {
+    return "oauth_token";
+  }
+  return "api_key";
+}
+
 export const apiKeyRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", (app as any).requireAuth);
 
@@ -27,6 +41,7 @@ export const apiKeyRoutes: FastifyPluginAsync = async (app) => {
         id: key.id,
         label: key.label,
         keyPrefix: key.keyPrefix,
+        keyType: key.keyType,
         priority: key.priority,
         isActive: key.isActive,
         lastUsedAt: key.lastUsedAt,
@@ -42,7 +57,7 @@ export const apiKeyRoutes: FastifyPluginAsync = async (app) => {
     return { data };
   });
 
-  // POST / - Add a new API key
+  // POST / - Add a new API key or OAuth token
   app.post<{ Body: { label: string; apiKey: string } }>("/", async (request, reply) => {
     const { label, apiKey } = request.body;
     if (!label || !apiKey) {
@@ -53,15 +68,25 @@ export const apiKeyRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(500).send({ error: { message: "Encryption secret not configured" } });
     }
 
-    // Validate the API key by listing models (free, no tokens used, model-agnostic)
-    try {
-      const client = new Anthropic({ apiKey });
-      await client.models.list({ limit: 1 });
-    } catch (err: any) {
-      const msg = err?.status === 401
-        ? "Invalid API key — authentication failed"
-        : `API key validation failed: ${err.message}`;
-      return reply.code(400).send({ error: { message: msg } });
+    // Detect key type from prefix
+    const keyType = detectKeyType(apiKey);
+
+    // Only validate API keys (OAuth tokens can't be validated via models.list)
+    if (keyType === "api_key") {
+      try {
+        const client = new Anthropic({ apiKey });
+        await client.models.list({ limit: 1 });
+      } catch (err: any) {
+        const msg = err?.status === 401
+          ? "Invalid API key — authentication failed"
+          : `API key validation failed: ${err.message}`;
+        return reply.code(400).send({ error: { message: msg } });
+      }
+    } else {
+      // Basic format validation for OAuth tokens
+      if (!apiKey.startsWith("sk-ant-oat")) {
+        return reply.code(400).send({ error: { message: "Invalid OAuth token format" } });
+      }
     }
 
     // Get max priority for ordering
@@ -80,6 +105,7 @@ export const apiKeyRoutes: FastifyPluginAsync = async (app) => {
         label,
         encryptedKey,
         keyPrefix,
+        keyType,
         priority: nextPriority,
       },
     });
@@ -89,6 +115,7 @@ export const apiKeyRoutes: FastifyPluginAsync = async (app) => {
         id: created.id,
         label: created.label,
         keyPrefix: created.keyPrefix,
+        keyType: created.keyType,
         priority: created.priority,
         isActive: created.isActive,
         lastUsedAt: created.lastUsedAt,
@@ -127,6 +154,7 @@ export const apiKeyRoutes: FastifyPluginAsync = async (app) => {
           id: updated.id,
           label: updated.label,
           keyPrefix: updated.keyPrefix,
+          keyType: updated.keyType,
           priority: updated.priority,
           isActive: updated.isActive,
           lastUsedAt: updated.lastUsedAt,

@@ -216,6 +216,7 @@ interface ApiKeyItem {
   id: string;
   label: string;
   keyPrefix: string;
+  keyType: "api_key" | "oauth_token";
   priority: number;
   isActive: boolean;
   lastUsedAt: string | null;
@@ -428,10 +429,10 @@ function ApiTab() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Key className="h-5 w-5" />
-                API Keys
+                API Keys & OAuth Tokens
               </CardTitle>
               <CardDescription>
-                Manage your Anthropic API keys. Keys are used in priority order.
+                Manage your Anthropic API keys or Claude Code OAuth tokens. Keys are used in priority order.
               </CardDescription>
             </div>
             <Button size="sm" onClick={() => setAddDialogOpen(true)}>
@@ -491,6 +492,17 @@ function ApiTab() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm">{key.label}</span>
+                        <Badge
+                          variant="secondary"
+                          className={cn(
+                            "text-[10px] px-1.5 py-0",
+                            key.keyType === "oauth_token"
+                              ? "bg-purple-500/10 text-purple-600 border-purple-500/20"
+                              : "bg-blue-500/10 text-blue-600 border-blue-500/20"
+                          )}
+                        >
+                          {key.keyType === "oauth_token" ? "OAuth" : "API Key"}
+                        </Badge>
                         {idx === 0 && key.isActive && (
                           <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
                             Primary

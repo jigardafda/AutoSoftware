@@ -1,11 +1,9 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "../db.js";
 import { cloneOrPullRepo } from "../services/repo-manager.js";
 import { config } from "../config.js";
-import { estimateCost } from "@autosoftware/shared";
 import { getProjectContext } from "../services/project-context.js";
-import { resolveApiKey } from "../services/api-key-resolver.js";
+import { resolveAuth, setupAgentSdkAuth, isValidAuth } from "../services/api-key-resolver.js";
+import { simpleQueryWithUsage, agentQueryWithUsage } from "../services/claude-query.js";
 
 interface ScanTask {
   title: string;
@@ -57,15 +55,16 @@ export async function handleRepoScan(jobs: { data: { repoId: string; projectId?:
     return;
   }
 
-  // Resolve API key from DB or env
-  const { key: resolvedKey, apiKeyId } = await resolveApiKey(repo.userId);
+  // Resolve authentication (OAuth token or API key)
+  const auth = await resolveAuth(repo.userId);
+  const { apiKeyId } = auth;
 
-  if (!resolvedKey || resolvedKey === "sk-ant-xxx") {
+  if (!isValidAuth(auth)) {
     await prisma.scanResult.create({
       data: {
         repositoryId: repoId,
         status: "failed",
-        summary: "No API key available. Add one in Settings or set ANTHROPIC_API_KEY in .env.",
+        summary: "No authentication configured. Set CLAUDE_CODE_OAUTH_TOKEN (free with Max subscription) or ANTHROPIC_API_KEY in .env.",
         analysisData: {},
       },
     });
@@ -73,12 +72,13 @@ export async function handleRepoScan(jobs: { data: { repoId: string; projectId?:
       where: { id: repoId },
       data: { status: "error" },
     });
-    console.error("Scan aborted: No API key available");
+    console.error("Scan aborted: No authentication configured");
     return;
   }
 
-  // Set env for Agent SDK
-  process.env.ANTHROPIC_API_KEY = resolvedKey;
+  // Set up auth for Agent SDK (OAuth or API key)
+  setupAgentSdkAuth(auth);
+  console.log(`Using ${auth.authType === "oauth" ? "OAuth token (Max subscription)" : "API key"} for scan`);
 
   await prisma.repository.update({
     where: { id: repoId },
@@ -102,11 +102,9 @@ export async function handleRepoScan(jobs: { data: { repoId: string; projectId?:
 
     const projectContext = await getProjectContext(repoId, projectId);
 
-    let analysisText = "";
     await emitLog(scanResult.id, "step", "Analyzing codebase with AI agent...");
 
-    for await (const message of query({
-      prompt: `${projectContext ? projectContext + "\n---\n\n" : ""}You are a senior software engineer performing a code review and analysis of this repository.
+    const scanPrompt = `${projectContext ? projectContext + "\n---\n\n" : ""}You are a senior software engineer performing a code review and analysis of this repository.
 
 Analyze the codebase thoroughly and identify actionable improvements. Look for:
 1. **Security vulnerabilities** - SQL injection, XSS, hardcoded secrets, insecure dependencies
@@ -124,19 +122,23 @@ IMPORTANT: Respond with ONLY a JSON array of tasks:
     "type": "security|bugfix|improvement|refactor|feature",
     "priority": "critical|high|medium|low"
   }
-]`,
-      options: {
-        allowedTools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Agent"],
-        permissionMode: "bypassPermissions",
-        maxTurns: 25,
-        maxBudgetUsd: config.defaultScanBudget,
-        cwd: repoDir,
+]`;
+
+    const { result: analysisText, usage: scanUsage } = await agentQueryWithUsage(
+      {
+        prompt: scanPrompt,
+        options: {
+          allowedTools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Agent"],
+          permissionMode: "bypassPermissions",
+          maxTurns: 25,
+          maxBudgetUsd: config.defaultScanBudget,
+          cwd: repoDir,
+        },
       },
-    })) {
-      if (message.type === "result" && message.subtype === "success") {
-        analysisText = message.result;
-      }
-    }
+      { apiKeyId, source: "scan", sourceId: repoId }
+    );
+
+    console.log(`Scan usage: ~${scanUsage.inputTokens} input, ~${scanUsage.outputTokens} output, ~$${scanUsage.costUsd.toFixed(4)}`);
 
     await emitLog(scanResult.id, "info", "Analysis complete");
     await emitLog(scanResult.id, "step", "Parsing analysis results...");
@@ -166,54 +168,30 @@ IMPORTANT: Respond with ONLY a JSON array of tasks:
     if (existingTasks.length > 0 && tasks.length > 0) {
       await emitLog(scanResult.id, "step", "Checking for duplicate tasks...");
       try {
-        const apiKey = process.env.ANTHROPIC_API_KEY;
-        const client = new Anthropic({ apiKey });
-        const dedupResponse = await client.messages.create({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1024,
-          system: `You are a deduplication engine. Given a list of EXISTING tasks and NEW tasks for a code repository, identify which new tasks are semantically duplicates of existing ones — i.e. they address the same underlying issue, even if worded differently.
+        const dedupSystemPrompt = `You are a deduplication engine. Given a list of EXISTING tasks and NEW tasks for a code repository, identify which new tasks are semantically duplicates of existing ones — i.e. they address the same underlying issue, even if worded differently.
 
 Return ONLY a JSON array of indices (0-based) of NEW tasks that are NOT duplicates and should be created. Example: [0, 2, 4]
 
-If all new tasks are duplicates, return []. If none are duplicates, return all indices.`,
-          messages: [{
-            role: "user",
-            content: `EXISTING TASKS:\n${existingTasks.map((t, i) => `${i}. [${t.type}] ${t.title}: ${t.description.slice(0, 200)}`).join("\n")}\n\nNEW TASKS:\n${tasks.map((t, i) => `${i}. [${t.type}] ${t.title}: ${t.description.slice(0, 200)}`).join("\n")}`,
-          }],
-        });
+If all new tasks are duplicates, return []. If none are duplicates, return all indices.`;
 
-        const text = dedupResponse.content[0];
-        if (text.type === "text") {
-          const match = text.text.match(/\[[\d\s,]*\]/);
-          if (match) {
-            const keepIndices: number[] = JSON.parse(match[0]);
-            const kept = keepIndices.filter((i) => i >= 0 && i < tasks.length);
-            const skipped = tasks.length - kept.length;
-            if (skipped > 0) {
-              console.log(`Dedup: skipping ${skipped} duplicate tasks for ${repo.fullName}`);
-            }
-            newTasks = kept.map((i) => tasks[i]);
+        const dedupUserMessage = `EXISTING TASKS:\n${existingTasks.map((t: any, i: number) => `${i}. [${t.type}] ${t.title}: ${t.description.slice(0, 200)}`).join("\n")}\n\nNEW TASKS:\n${tasks.map((t, i) => `${i}. [${t.type}] ${t.title}: ${t.description.slice(0, 200)}`).join("\n")}`;
+
+        // Use Agent SDK for deduplication (supports OAuth!) with usage tracking
+        const { result: dedupResult } = await simpleQueryWithUsage(
+          dedupSystemPrompt,
+          dedupUserMessage,
+          { apiKeyId, source: "scan", sourceId: repoId }
+        );
+
+        const match = dedupResult.match(/\[[\d\s,]*\]/);
+        if (match) {
+          const keepIndices: number[] = JSON.parse(match[0]);
+          const kept = keepIndices.filter((i) => i >= 0 && i < tasks.length);
+          const skipped = tasks.length - kept.length;
+          if (skipped > 0) {
+            console.log(`Dedup: skipping ${skipped} duplicate tasks for ${repo.fullName}`);
           }
-        }
-
-        // Record usage for the dedup call
-        if (apiKeyId) {
-          const cost = estimateCost(
-            "claude-sonnet-4-20250514",
-            dedupResponse.usage.input_tokens,
-            dedupResponse.usage.output_tokens
-          );
-          await prisma.apiKeyUsage.create({
-            data: {
-              apiKeyId,
-              model: "claude-sonnet-4-20250514",
-              inputTokens: dedupResponse.usage.input_tokens,
-              outputTokens: dedupResponse.usage.output_tokens,
-              estimatedCostUsd: cost,
-              source: "scan",
-              sourceId: repoId,
-            },
-          });
+          newTasks = kept.map((i) => tasks[i]);
         }
       } catch (dedupErr) {
         console.error("Dedup check failed, creating all tasks:", dedupErr);
@@ -256,27 +234,6 @@ If all new tasks are duplicates, return []. If none are duplicates, return all i
       where: { id: repoId },
       data: { status: "idle", lastScannedAt: new Date() },
     });
-
-    // Record usage if using a DB key (rough estimate for agent SDK usage)
-    if (apiKeyId) {
-      // Agent SDK doesn't give us exact token counts, so we estimate based on budget
-      // We record a placeholder — the actual cost is tracked by the SDK budget
-      await prisma.apiKeyUsage.create({
-        data: {
-          apiKeyId,
-          model: "claude-sonnet-4-20250514",
-          inputTokens: 0,
-          outputTokens: 0,
-          estimatedCostUsd: 0,
-          source: "scan",
-          sourceId: repoId,
-        },
-      });
-      await prisma.apiKey.update({
-        where: { id: apiKeyId },
-        data: { lastUsedAt: new Date(), lastError: null },
-      });
-    }
 
     console.log(`Scan complete for ${repo.fullName}: ${tasksCreated} tasks created`);
   } catch (err) {

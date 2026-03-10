@@ -1,11 +1,23 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import { prisma } from "../db.js";
 import { cloneOrPullRepo } from "../services/repo-manager.js";
 import { config } from "../config.js";
 import { getProjectContext } from "../services/project-context.js";
-import { resolveApiKey } from "../services/api-key-resolver.js";
+import { resolveAuth, setupAgentSdkAuth, isValidAuth } from "../services/api-key-resolver.js";
+import { agentQueryWithUsage } from "../services/claude-query.js";
 import { getBoss } from "../boss.js";
 import { JOB_NAMES } from "@autosoftware/shared";
+
+async function emitTaskLog(
+  taskId: string,
+  phase: string,
+  level: string,
+  message: string,
+  metadata: Record<string, any> = {}
+) {
+  await prisma.taskLog.create({
+    data: { taskId, phase, level, message, metadata },
+  });
+}
 
 interface PlanningQuestion {
   questionKey: string;
@@ -54,23 +66,25 @@ export async function handleTaskPlanning(jobs: { data: { taskId: string } }[]) {
 
   const repo = task.repository;
 
-  // Resolve API key from DB or env
-  const { key: resolvedKey, apiKeyId } = await resolveApiKey(repo.userId);
+  // Resolve authentication (OAuth token or API key)
+  const auth = await resolveAuth(repo.userId);
+  const { apiKeyId } = auth;
 
-  if (!resolvedKey || resolvedKey === "sk-ant-xxx") {
+  if (!isValidAuth(auth)) {
     await prisma.task.update({
       where: { id: taskId },
       data: {
         status: "failed",
-        metadata: { error: "No API key available. Add one in Settings or set ANTHROPIC_API_KEY in .env." },
+        metadata: { error: "No authentication configured. Set CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY in .env." },
       },
     });
-    console.error("Planning aborted: No API key available");
+    console.error("Planning aborted: No authentication configured");
     return;
   }
 
-  // Set env for Agent SDK
-  process.env.ANTHROPIC_API_KEY = resolvedKey;
+  // Set up auth for Agent SDK
+  setupAgentSdkAuth(auth);
+  console.log(`Using ${auth.authType === "oauth" ? "OAuth token" : "API key"} for planning`);
 
   const account = repo.user.accounts.find((a: any) => a.provider === repo.provider);
   if (!account) {
@@ -166,22 +180,29 @@ The plan should be detailed enough for another AI agent to implement it without 
 
 The \`affectedFiles\` array MUST list every file that will likely be created, modified, or deleted during implementation. Use relative paths from the repository root.`;
 
-    let resultText = "";
+    await emitTaskLog(taskId, "plan", "step", "Starting planning analysis...");
 
-    for await (const message of query({
-      prompt,
-      options: {
-        allowedTools: ["Read", "Glob", "Grep", "Bash"],
-        permissionMode: "bypassPermissions",
-        maxTurns: 20,
-        maxBudgetUsd: config.defaultPlanBudget,
-        cwd: repoDir,
+    const { result: resultText, usage: planUsage } = await agentQueryWithUsage(
+      {
+        prompt,
+        options: {
+          allowedTools: ["Read", "Glob", "Grep", "Bash"],
+          permissionMode: "bypassPermissions",
+          maxTurns: 20,
+          maxBudgetUsd: config.defaultPlanBudget,
+          cwd: repoDir,
+        },
       },
-    })) {
-      if (message.type === "result" && message.subtype === "success") {
-        resultText = message.result;
+      {
+        apiKeyId,
+        source: "plan",
+        sourceId: taskId,
+        onLog: (level, message, metadata) =>
+          emitTaskLog(taskId, "plan", level, message, metadata || {}),
       }
-    }
+    );
+
+    console.log(`Plan usage: ~${planUsage.inputTokens} input, ~${planUsage.outputTokens} output, ~$${planUsage.costUsd.toFixed(4)}`);
 
     // Parse the JSON response
     let response: PlanningResponse;
@@ -196,6 +217,16 @@ The \`affectedFiles\` array MUST list every file that will likely be created, mo
       // Treat unparseable response as a ready plan with the raw text
       response = { status: "ready", plan: resultText, affectedFiles: [] };
     }
+
+    // Always update usage counters (increment to accumulate across rounds)
+    await prisma.task.update({
+      where: { id: taskId },
+      data: {
+        inputTokens: { increment: planUsage.inputTokens },
+        outputTokens: { increment: planUsage.outputTokens },
+        estimatedCostUsd: { increment: planUsage.costUsd },
+      },
+    });
 
     if (response.status === "needs_input" && currentRound < maxRounds) {
       // Create planning questions and await user input
@@ -253,25 +284,6 @@ The \`affectedFiles\` array MUST list every file that will likely be created, mo
       });
 
       console.log(`Task ${taskId} planning complete, queued for execution`);
-    }
-
-    // Record usage if using a DB key
-    if (apiKeyId) {
-      await prisma.apiKeyUsage.create({
-        data: {
-          apiKeyId,
-          model: "claude-sonnet-4-20250514",
-          inputTokens: 0,
-          outputTokens: 0,
-          estimatedCostUsd: 0,
-          source: "plan",
-          sourceId: taskId,
-        },
-      });
-      await prisma.apiKey.update({
-        where: { id: apiKeyId },
-        data: { lastUsedAt: new Date(), lastError: null },
-      });
     }
   } catch (err) {
     console.error(`Planning failed for task ${taskId}:`, err);

@@ -151,27 +151,19 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
       }),
     ]);
 
-    // Get API key usage for this repo (scan source with sourceId = repoId, task source with sourceId in task ids)
-    const taskIds = tasks.map((t) => t.id);
-    const usage = await prisma.apiKeyUsage.findMany({
-      where: {
-        OR: [
-          { source: "scan", sourceId: repo.id },
-          ...(taskIds.length > 0 ? [{ source: "task", sourceId: { in: taskIds } }] : []),
-        ],
-      },
-      orderBy: { createdAt: "asc" },
-    });
+    // Aggregate usage directly from tasks (always recorded regardless of API key source)
+    const totalInputTokens = tasks.reduce((s, t) => s + t.inputTokens, 0);
+    const totalOutputTokens = tasks.reduce((s, t) => s + t.outputTokens, 0);
+    const totalCost = tasks.reduce((s, t) => s + t.estimatedCostUsd, 0);
+    const totalRequests = tasks.filter((t) => t.inputTokens > 0 || t.outputTokens > 0).length;
 
-    const totalInputTokens = usage.reduce((s, u) => s + u.inputTokens, 0);
-    const totalOutputTokens = usage.reduce((s, u) => s + u.outputTokens, 0);
-    const totalCost = usage.reduce((s, u) => s + u.estimatedCostUsd, 0);
-
-    // Daily cost aggregation
+    // Daily cost aggregation from tasks
     const dailyCost = new Map<string, number>();
-    for (const u of usage) {
-      const day = u.createdAt.toISOString().slice(0, 10);
-      dailyCost.set(day, (dailyCost.get(day) || 0) + u.estimatedCostUsd);
+    for (const t of tasks) {
+      if (t.estimatedCostUsd > 0) {
+        const day = t.createdAt.toISOString().slice(0, 10);
+        dailyCost.set(day, (dailyCost.get(day) || 0) + t.estimatedCostUsd);
+      }
     }
 
     return {
@@ -186,7 +178,7 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
           totalInputTokens,
           totalOutputTokens,
           totalCost,
-          totalRequests: usage.length,
+          totalRequests,
           daily: Array.from(dailyCost.entries()).map(([date, cost]) => ({ date, cost })),
         },
       },

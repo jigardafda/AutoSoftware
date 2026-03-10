@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -17,6 +17,11 @@ import {
   Loader2,
   Ban,
   ExternalLink,
+  ChevronDown,
+  ChevronRight,
+  RotateCcw,
+  X,
+  BrainCircuit,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FileBrowser } from "@/components/repos/FileBrowser";
@@ -38,6 +43,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Pagination, paginate } from "@/components/Pagination";
 import {
   AreaChart,
@@ -144,6 +150,9 @@ export function RepoDetail() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [tasksPage, setTasksPage] = useState(0);
   const [scansPage, setScansPage] = useState(0);
+  const [expandedScan, setExpandedScan] = useState<string | null>(null);
+  const [scanLogs, setScanLogs] = useState<Record<string, any[]>>({});
+  const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
 
   const VALID_TABS = ["overview", "files", "tasks", "scans", "usage"] as const;
   const tab = useMemo(() => {
@@ -183,6 +192,52 @@ export function RepoDetail() {
     },
     onError: (err: Error) => toast.error(err.message),
   });
+
+  const bulkPlanMutation = useMutation({
+    mutationFn: (ids: string[]) => api.tasks.bulkPlan(ids),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["repo-stats", id] });
+      setSelectedTasks(new Set());
+      toast.success(`${data.planned} task(s) queued for planning`);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const bulkRetryMutation = useMutation({
+    mutationFn: (ids: string[]) => api.tasks.bulkRetry(ids),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["repo-stats", id] });
+      setSelectedTasks(new Set());
+      toast.success(`${data.retried} task(s) queued for retry`);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.tasks.bulkDelete(ids),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["repo-stats", id] });
+      setSelectedTasks(new Set());
+      toast.success(`${data.deleted} task(s) deleted`);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const toggleScanExpand = async (scanId: string) => {
+    if (expandedScan === scanId) {
+      setExpandedScan(null);
+    } else {
+      setExpandedScan(scanId);
+      if (!scanLogs[scanId]) {
+        try {
+          const logs = await api.scans.logs(scanId);
+          setScanLogs((prev) => ({ ...prev, [scanId]: logs }));
+        } catch (err) {
+          console.error("Failed to fetch scan logs:", err);
+        }
+      }
+    }
+  };
 
   if (isLoading) {
     return (
@@ -408,10 +463,104 @@ export function RepoDetail() {
             </Card>
           ) : (
             <>
+              {/* Bulk Action Bar */}
+              {selectedTasks.size > 0 && (
+                <div className="flex items-center justify-between gap-3 p-3 bg-muted/50 rounded-lg border">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{selectedTasks.size} selected</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2"
+                      onClick={() => setSelectedTasks(new Set())}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {/* Start Planning - for pending/planned tasks */}
+                    {(() => {
+                      const plannableIds = Array.from(selectedTasks).filter((id) => {
+                        const task = tasks.find((t: any) => t.id === id);
+                        return task && ["pending", "planned"].includes(task.status);
+                      });
+                      return plannableIds.length > 0 ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => bulkPlanMutation.mutate(plannableIds)}
+                          disabled={bulkPlanMutation.isPending}
+                        >
+                          {bulkPlanMutation.isPending ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <BrainCircuit className="h-3.5 w-3.5" />
+                          )}
+                          Start Planning ({plannableIds.length})
+                        </Button>
+                      ) : null;
+                    })()}
+                    {/* Retry - for failed/cancelled tasks */}
+                    {(() => {
+                      const retryableIds = Array.from(selectedTasks).filter((id) => {
+                        const task = tasks.find((t: any) => t.id === id);
+                        return task && ["failed", "cancelled"].includes(task.status);
+                      });
+                      return retryableIds.length > 0 ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => bulkRetryMutation.mutate(retryableIds)}
+                          disabled={bulkRetryMutation.isPending}
+                        >
+                          {bulkRetryMutation.isPending ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <RotateCcw className="h-3.5 w-3.5" />
+                          )}
+                          Retry ({retryableIds.length})
+                        </Button>
+                      ) : null;
+                    })()}
+                    <ConfirmDeleteDialog
+                      title="Delete selected tasks"
+                      description={`This will permanently delete ${selectedTasks.size} task(s). This action cannot be undone.`}
+                      onConfirm={() => bulkDeleteMutation.mutate(Array.from(selectedTasks))}
+                      trigger={
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={bulkDeleteMutation.isPending}
+                        >
+                          {bulkDeleteMutation.isPending ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" />
+                          )}
+                          Delete
+                        </Button>
+                      }
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="overflow-x-auto rounded-md border">
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={selectedTasks.size === tasks.length && tasks.length > 0}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedTasks(new Set(tasks.map((t: any) => t.id)));
+                            } else {
+                              setSelectedTasks(new Set());
+                            }
+                          }}
+                        />
+                      </TableHead>
                       <TableHead className="w-8">Status</TableHead>
                       <TableHead>Title</TableHead>
                       <TableHead className="w-20">Type</TableHead>
@@ -425,8 +574,29 @@ export function RepoDetail() {
                     {pagedTasks.map((task: any) => {
                       const statusCfg = STATUS_ICON[task.status] || STATUS_ICON.pending;
                       const Icon = statusCfg.icon;
+                      const isSelected = selectedTasks.has(task.id);
                       return (
-                        <TableRow key={task.id} className="cursor-pointer" onClick={() => navigate(`/tasks/${task.id}`)}>
+                        <TableRow
+                          key={task.id}
+                          className={cn("cursor-pointer", isSelected && "bg-muted/50")}
+                          onClick={() => navigate(`/tasks/${task.id}`)}
+                        >
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={(checked) => {
+                                setSelectedTasks((prev) => {
+                                  const next = new Set(prev);
+                                  if (checked) {
+                                    next.add(task.id);
+                                  } else {
+                                    next.delete(task.id);
+                                  }
+                                  return next;
+                                });
+                              }}
+                            />
+                          </TableCell>
                           <TableCell><Icon className={cn("h-4 w-4", statusCfg.className)} /></TableCell>
                           <TableCell>
                             <p className="text-sm font-medium truncate max-w-[300px]">{task.title}</p>
@@ -479,34 +649,98 @@ export function RepoDetail() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-8"></TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Scanned At</TableHead>
                       <TableHead>Tasks Created</TableHead>
-                      <TableHead>Summary</TableHead>
+                      <TableHead>Summary / Error</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {pagedScans.map((scan: any) => (
-                      <TableRow key={scan.id}>
-                        <TableCell>
-                          {scan.status === "completed" ? (
-                            <Badge variant="secondary" className="bg-green-500/10 text-green-500 border-green-500/20">
-                              <CheckCircle2 className="h-3 w-3 mr-1" />
-                              Completed
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="bg-red-500/10 text-red-500 border-red-500/20">
-                              <XCircle className="h-3 w-3 mr-1" />
-                              Failed
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{relativeTime(scan.scannedAt)}</TableCell>
-                        <TableCell className="text-sm">{scan.tasksCreated ?? 0}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground max-w-[300px] truncate">
-                          {scan.summary || "--"}
-                        </TableCell>
-                      </TableRow>
+                      <Fragment key={scan.id}>
+                        <TableRow
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => toggleScanExpand(scan.id)}
+                        >
+                          <TableCell>
+                            {expandedScan === scan.id ? (
+                              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {scan.status === "completed" ? (
+                              <Badge variant="secondary" className="bg-green-500/10 text-green-500 border-green-500/20">
+                                <CheckCircle2 className="h-3 w-3 mr-1" />
+                                Completed
+                              </Badge>
+                            ) : scan.status === "in_progress" ? (
+                              <Badge variant="secondary" className="bg-blue-500/10 text-blue-500 border-blue-500/20">
+                                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                In Progress
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary" className="bg-red-500/10 text-red-500 border-red-500/20">
+                                <XCircle className="h-3 w-3 mr-1" />
+                                Failed
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{relativeTime(scan.scannedAt)}</TableCell>
+                          <TableCell className="text-sm">{scan.tasksCreated ?? 0}</TableCell>
+                          <TableCell className="text-sm max-w-[400px]">
+                            {scan.status === "failed" ? (
+                              <span className="text-red-500 whitespace-pre-wrap break-words">
+                                {scan.summary || "Unknown error"}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground truncate block">
+                                {scan.summary || "--"}
+                              </span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                        {expandedScan === scan.id && (
+                          <TableRow key={`${scan.id}-logs`}>
+                            <TableCell colSpan={5} className="bg-muted/30 p-0">
+                              <div className="p-4 space-y-2 max-h-64 overflow-y-auto">
+                                <p className="text-xs font-medium text-muted-foreground mb-2">Scan Logs</p>
+                                {!scanLogs[scan.id] ? (
+                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    Loading logs...
+                                  </div>
+                                ) : scanLogs[scan.id].length === 0 ? (
+                                  <p className="text-sm text-muted-foreground">No logs available</p>
+                                ) : (
+                                  <div className="space-y-1 font-mono text-xs">
+                                    {scanLogs[scan.id].map((log: any) => (
+                                      <div
+                                        key={log.id}
+                                        className={cn(
+                                          "flex gap-2 py-0.5",
+                                          log.level === "error" && "text-red-500",
+                                          log.level === "success" && "text-green-500",
+                                          log.level === "step" && "text-blue-500",
+                                          log.level === "info" && "text-muted-foreground"
+                                        )}
+                                      >
+                                        <span className="text-muted-foreground/60 w-20 shrink-0">
+                                          {new Date(log.createdAt).toLocaleTimeString()}
+                                        </span>
+                                        <span className="uppercase w-20 shrink-0 text-left">[{log.level}]</span>
+                                        <span>{log.message}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </Fragment>
                     ))}
                   </TableBody>
                 </Table>

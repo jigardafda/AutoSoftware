@@ -44,6 +44,9 @@ export const taskRoutes: FastifyPluginAsync = async (app) => {
         planningQuestions: {
           orderBy: [{ round: "desc" }, { sortOrder: "asc" }],
         },
+        logs: {
+          orderBy: { createdAt: "asc" },
+        },
         scanResult: {
           select: {
             id: true,
@@ -72,10 +75,36 @@ export const taskRoutes: FastifyPluginAsync = async (app) => {
         planningRound: task.planningRound,
         enhancedPlan: task.enhancedPlan,
         planningQuestions: task.planningQuestions,
+        logs: task.logs,
         scanResult: task.scanResult,
       },
     };
   });
+
+  // GET /:id/logs - Poll for new task logs (for live streaming)
+  app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
+    "/:id/logs",
+    async (request, reply) => {
+      const task = await prisma.task.findFirst({
+        where: { id: request.params.id, userId: request.userId },
+        select: { id: true },
+      });
+      if (!task) return reply.code(404).send({ error: { message: "Task not found" } });
+
+      const { after } = request.query;
+      const logs = await prisma.taskLog.findMany({
+        where: {
+          taskId: task.id,
+          ...(after && {
+            createdAt: { gt: new Date(after) },
+          }),
+        },
+        orderBy: { createdAt: "asc" },
+      });
+
+      return { data: logs };
+    }
+  );
 
   app.post<{ Body: CreateTaskInput & { projectId?: string; skipPlanning?: boolean } }>("/", async (request, reply) => {
     const { repositoryId, title, description, type, priority, projectId, skipPlanning } = request.body;
@@ -244,5 +273,130 @@ export const taskRoutes: FastifyPluginAsync = async (app) => {
     });
 
     return { data: { deleted: taskIds.length } };
+  });
+
+  // Retry a single failed task
+  app.post<{ Params: { id: string } }>("/:id/retry", async (request, reply) => {
+    const task = await prisma.task.findFirst({
+      where: { id: request.params.id, userId: request.userId },
+    });
+    if (!task) return reply.code(404).send({ error: { message: "Task not found" } });
+
+    if (!["failed", "cancelled"].includes(task.status)) {
+      return reply.code(400).send({ error: { message: "Only failed or cancelled tasks can be retried" } });
+    }
+
+    // Clear previous logs for clean retry
+    await prisma.taskLog.deleteMany({ where: { taskId: task.id } });
+
+    // Reset task state and re-queue for planning
+    await prisma.task.update({
+      where: { id: task.id },
+      data: {
+        status: "planning",
+        planningRound: 0,
+        enhancedPlan: null,
+        affectedFiles: "[]",
+        pullRequestUrl: null,
+        pullRequestStatus: null,
+        completedAt: null,
+        metadata: {},
+      },
+    });
+
+    await schedulerService.queueTaskPlanning(task.id);
+
+    return { data: { success: true } };
+  });
+
+  // Bulk retry failed/cancelled tasks
+  app.post<{ Body: { ids: string[] } }>("/bulk-retry", async (request, reply) => {
+    const { ids } = request.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return reply.code(400).send({ error: { message: "ids array is required" } });
+    }
+
+    // Verify all tasks belong to the current user and are retryable
+    const tasks = await prisma.task.findMany({
+      where: {
+        id: { in: ids },
+        userId: request.userId,
+        status: { in: ["failed", "cancelled"] },
+      },
+      select: { id: true },
+    });
+
+    if (tasks.length === 0) {
+      return reply.code(404).send({ error: { message: "No retryable tasks found" } });
+    }
+
+    const taskIds = tasks.map((t) => t.id);
+
+    // Clear previous logs for clean retry
+    await prisma.taskLog.deleteMany({ where: { taskId: { in: taskIds } } });
+
+    // Reset task states
+    await prisma.task.updateMany({
+      where: { id: { in: taskIds } },
+      data: {
+        status: "planning",
+        planningRound: 0,
+        enhancedPlan: null,
+        affectedFiles: "[]",
+        pullRequestUrl: null,
+        pullRequestStatus: null,
+        completedAt: null,
+        metadata: {},
+      },
+    });
+
+    // Queue each task for planning
+    for (const taskId of taskIds) {
+      await schedulerService.queueTaskPlanning(taskId);
+    }
+
+    return { data: { retried: taskIds.length } };
+  });
+
+  // Bulk start planning for pending/planned tasks
+  app.post<{ Body: { ids: string[] } }>("/bulk-plan", async (request, reply) => {
+    const { ids } = request.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return reply.code(400).send({ error: { message: "ids array is required" } });
+    }
+
+    // Verify all tasks belong to the current user and are plannable
+    const tasks = await prisma.task.findMany({
+      where: {
+        id: { in: ids },
+        userId: request.userId,
+        status: { in: ["pending", "planned"] },
+      },
+      select: { id: true },
+    });
+
+    if (tasks.length === 0) {
+      return reply.code(404).send({ error: { message: "No plannable tasks found (must be pending or planned)" } });
+    }
+
+    const taskIds = tasks.map((t) => t.id);
+
+    // Reset task states for planning
+    await prisma.task.updateMany({
+      where: { id: { in: taskIds } },
+      data: {
+        status: "planning",
+        planningRound: 0,
+        enhancedPlan: null,
+        affectedFiles: "[]",
+      },
+    });
+
+    // Queue each task for planning
+    for (const taskId of taskIds) {
+      await schedulerService.queueTaskPlanning(taskId);
+    }
+
+    return { data: { planned: taskIds.length } };
   });
 };

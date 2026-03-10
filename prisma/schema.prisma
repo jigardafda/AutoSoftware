@@ -87,6 +87,11 @@ enum ScanStatus {
   failed
 }
 
+enum ClaudeKeyType {
+  api_key
+  oauth_token
+}
+
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -170,6 +175,11 @@ model Task {
   enhancedPlan       String?
   affectedFiles      Json     @default("[]")
 
+  // Usage tracking (always recorded, regardless of API key source)
+  inputTokens        Int      @default(0)
+  outputTokens       Int      @default(0)
+  estimatedCostUsd   Float    @default(0)
+
   repository         Repository          @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
   user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   project            Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
@@ -177,6 +187,21 @@ model Task {
   planningQuestions  PlanningQuestion[]
   externalLink       TaskExternalLink?
   embedSubmission    EmbedSubmission?
+  logs               TaskLog[]
+}
+
+model TaskLog {
+  id        String   @id @default(cuid())
+  taskId    String
+  phase     String   @default("execute") // "plan" | "execute"
+  level     String   @default("info")    // "step" | "info" | "tool" | "error" | "success"
+  message   String
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
 }
 
 model PlanningQuestion {
@@ -250,17 +275,18 @@ model ActivityEvent {
 }
 
 model ApiKey {
-  id           String   @id @default(cuid())
+  id           String       @id @default(cuid())
   userId       String
   label        String
   encryptedKey String
   keyPrefix    String
-  priority     Int      @default(0)
-  isActive     Boolean  @default(true)
+  keyType      ClaudeKeyType @default(api_key)
+  priority     Int          @default(0)
+  isActive     Boolean      @default(true)
   lastUsedAt   DateTime?
   lastError    String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   usageRecords ApiKeyUsage[]

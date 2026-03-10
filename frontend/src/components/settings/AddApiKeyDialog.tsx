@@ -50,9 +50,10 @@ export function AddApiKeyDialog({ open, onOpenChange, onKeyAdded }: AddApiKeyDia
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add API Key</DialogTitle>
+          <DialogTitle>Add API Key or OAuth Token</DialogTitle>
           <DialogDescription>
-            Add an Anthropic API key. It will be validated and encrypted before storage.
+            Add an Anthropic API key (sk-ant-api...) or Claude Code OAuth token (sk-ant-oat...).
+            Keys are validated before storage, tokens are stored directly.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -67,12 +68,12 @@ export function AddApiKeyDialog({ open, onOpenChange, onKeyAdded }: AddApiKeyDia
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="api-key">API Key</Label>
+            <Label htmlFor="api-key">API Key / OAuth Token</Label>
             <div className="relative">
               <Input
                 id="api-key"
                 type={showKey ? "text" : "password"}
-                placeholder="sk-ant-..."
+                placeholder="sk-ant-api... or sk-ant-oat..."
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 disabled={loading}

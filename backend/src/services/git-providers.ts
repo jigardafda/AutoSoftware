@@ -16,11 +16,16 @@ export async function listRemoteRepos(
   switch (provider) {
     case "github": {
       const res = await fetch(
-        "https://api.github.com/user/repos?sort=updated&per_page=100",
+        "https://api.github.com/user/repos?sort=updated&per_page=100&affiliation=owner,collaborator,organization_member",
         { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } }
       );
-      if (!res.ok) throw new Error("Failed to fetch GitHub repos");
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error(`GitHub API error (${res.status}):`, errorText);
+        throw new Error(`Failed to fetch GitHub repos: ${res.status}`);
+      }
       const data = await res.json();
+      console.log(`GitHub returned ${data.length} repos`);
       return data.map((r: any) => ({
         id: String(r.id),
         fullName: r.full_name,

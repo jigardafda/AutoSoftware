@@ -40,6 +40,15 @@ export async function createWorktree(
   await mkdir(path.dirname(worktreeDir), { recursive: true });
 
   const git = simpleGit(repoDir);
+
+  // Prune stale worktree entries
+  try {
+    await git.raw(["worktree", "prune"]);
+  } catch {
+    // Ignore prune errors
+  }
+
+  // Create worktree with new branch (branch name is unique per attempt)
   await git.raw(["worktree", "add", "-b", branchName, worktreeDir]);
 
   return worktreeDir;
