@@ -21,6 +21,7 @@ import {
 import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 import { PlanningQuestionsCard } from "@/components/tasks/PlanningQuestionsCard";
 import { LinkedText } from "@/components/LinkedText";
+import { ExternalSourceBadge } from "@/components/integrations/ExternalSourceBadge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -283,6 +284,9 @@ export function TaskDetail() {
           <Badge variant="outline" className={type.className}>
             {type.label}
           </Badge>
+          {task.externalLink && (
+            <ExternalSourceBadge externalLink={task.externalLink} />
+          )}
         </div>
 
         {/* Timestamps */}
@@ -507,9 +511,17 @@ export function TaskDetail() {
                 <div>
                   <dt className="text-muted-foreground">Source</dt>
                   <dd className="font-medium mt-0.5">
-                    {task.source === "auto_scan" ? "Auto-generated" : "Manual"}
+                    {task.source === "external_import" ? "External Import" : task.source === "auto_scan" ? "Auto-generated" : "Manual"}
                   </dd>
                 </div>
+                {task.externalLink && (
+                  <div>
+                    <dt className="text-muted-foreground">External Source</dt>
+                    <dd className="mt-0.5">
+                      <ExternalSourceBadge externalLink={task.externalLink} />
+                    </dd>
+                  </div>
+                )}
                 <div>
                   <dt className="text-muted-foreground">Repository</dt>
                   <dd className="font-medium mt-0.5">{task.repositoryName}</dd>

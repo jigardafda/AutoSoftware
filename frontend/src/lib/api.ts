@@ -126,6 +126,32 @@ export const api = {
       return request<{ jobs: any[]; total: number }>(`/queues/${name}/jobs${qs}`);
     },
   },
+  integrations: {
+    providers: () => request<any[]>("/integrations/providers"),
+    list: () => request<any[]>("/integrations"),
+    connectToken: (body: { provider: string; token: string; config?: Record<string, string>; displayName?: string }) =>
+      request<any>("/integrations", { method: "POST", body: JSON.stringify(body) }),
+    disconnect: (id: string) =>
+      request<any>(`/integrations/${id}`, { method: "DELETE" }),
+    test: (id: string) =>
+      request<any>(`/integrations/${id}/test`, { method: "POST" }),
+    listProjects: (id: string) =>
+      request<any[]>(`/integrations/${id}/projects`),
+    listItems: (id: string, extProjectId: string, params?: Record<string, string>) => {
+      const qs = params ? `?${new URLSearchParams(params)}` : "";
+      return request<any>(`/integrations/${id}/projects/${encodeURIComponent(extProjectId)}/items${qs}`);
+    },
+    getItemDetail: (id: string, extProjectId: string, itemId: string) =>
+      request<any>(`/integrations/${id}/projects/${encodeURIComponent(extProjectId)}/items/${encodeURIComponent(itemId)}`),
+    projectLinks: (projectId: string) =>
+      request<any[]>(`/integrations/projects/${projectId}/links`),
+    createLink: (projectId: string, body: any) =>
+      request<any>(`/integrations/projects/${projectId}/links`, { method: "POST", body: JSON.stringify(body) }),
+    deleteLink: (linkId: string) =>
+      request<any>(`/integrations/links/${linkId}`, { method: "DELETE" }),
+    importItems: (linkId: string, body: { itemIds: string[]; repositoryId: string }) =>
+      request<any>(`/integrations/links/${linkId}/import`, { method: "POST", body: JSON.stringify(body) }),
+  },
   activity: {
     list: (params?: Record<string, string>) => {
       const qs = params ? `?${new URLSearchParams(params)}` : "";

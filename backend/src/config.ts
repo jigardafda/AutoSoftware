@@ -23,6 +23,22 @@ export const config = {
     clientId: process.env.BITBUCKET_CLIENT_ID || "",
     clientSecret: process.env.BITBUCKET_CLIENT_SECRET || "",
   },
+  linear: {
+    clientId: process.env.LINEAR_CLIENT_ID || "",
+    clientSecret: process.env.LINEAR_CLIENT_SECRET || "",
+  },
+  jira: {
+    clientId: process.env.JIRA_CLIENT_ID || "",
+    clientSecret: process.env.JIRA_CLIENT_SECRET || "",
+  },
+  asana: {
+    clientId: process.env.ASANA_CLIENT_ID || "",
+    clientSecret: process.env.ASANA_CLIENT_SECRET || "",
+  },
+  azureDevops: {
+    clientId: process.env.AZURE_DEVOPS_CLIENT_ID || "",
+    clientSecret: process.env.AZURE_DEVOPS_CLIENT_SECRET || "",
+  },
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
   apiKeyEncryptionSecret: process.env.API_KEY_ENCRYPTION_SECRET || "",
   workDir: process.env.WORK_DIR || "/tmp/autosoftware-workspaces",

@@ -13,7 +13,11 @@ import { activityRoutes } from "./routes/activity.js";
 import { queueRoutes } from "./routes/queues.js";
 import { apiKeyRoutes } from "./routes/api-keys.js";
 import { projectRoutes } from "./routes/projects.js";
+import { integrationRoutes } from "./routes/integrations.js";
 import { schedulerService } from "./services/scheduler.js";
+
+// Register integration adapters
+import "./services/integrations/index.js";
 
 const app = Fastify({ logger: true });
 
@@ -53,6 +57,7 @@ await app.register(activityRoutes, { prefix: "/api/activity" });
 await app.register(queueRoutes, { prefix: "/api/queues" });
 await app.register(apiKeyRoutes, { prefix: "/api/api-keys" });
 await app.register(projectRoutes, { prefix: "/api/projects" });
+await app.register(integrationRoutes, { prefix: "/api/integrations" });
 
 app.get("/api/health", async () => ({ status: "ok" }));
 

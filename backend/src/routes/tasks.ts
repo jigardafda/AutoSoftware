@@ -53,6 +53,15 @@ export const taskRoutes: FastifyPluginAsync = async (app) => {
             tasksCreated: true,
           },
         },
+        externalLink: {
+          include: {
+            integrationLink: {
+              include: {
+                integration: { select: { provider: true, displayName: true } },
+              },
+            },
+          },
+        },
       },
     });
     if (!task) return reply.code(404).send({ error: { message: "Task not found" } });

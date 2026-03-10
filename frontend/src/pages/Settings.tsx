@@ -43,6 +43,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AddApiKeyDialog } from "@/components/settings/AddApiKeyDialog";
+import { IntegrationsTab } from "@/components/integrations/IntegrationsTab";
 import { toast } from "sonner";
 import {
   AreaChart,
@@ -718,7 +719,7 @@ function SettingsSkeleton() {
   );
 }
 
-const VALID_TABS = ["profile", "preferences", "api"] as const;
+const VALID_TABS = ["profile", "preferences", "api", "integrations"] as const;
 
 export function SettingsPage() {
   const { loading } = useAuth();
@@ -745,6 +746,7 @@ export function SettingsPage() {
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="preferences">Preferences</TabsTrigger>
           <TabsTrigger value="api">API</TabsTrigger>
+          <TabsTrigger value="integrations">Integrations</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile">
@@ -757,6 +759,10 @@ export function SettingsPage() {
 
         <TabsContent value="api">
           <ApiTab />
+        </TabsContent>
+
+        <TabsContent value="integrations">
+          <IntegrationsTab />
         </TabsContent>
       </Tabs>
     </div>

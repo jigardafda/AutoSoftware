@@ -19,6 +19,9 @@ import {
   FolderKanban,
   FileText,
   GitBranch,
+  Unplug,
+  Link2,
+  Import,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -43,6 +46,10 @@ import {
 import { Pagination, paginate } from "@/components/Pagination";
 import { AddRepoToProjectDialog } from "@/components/projects/AddRepoToProjectDialog";
 import { DocumentEditor } from "@/components/projects/DocumentEditor";
+import { ProviderIcon } from "@/components/integrations/ProviderIcon";
+import { LinkExternalProjectDialog } from "@/components/integrations/LinkExternalProjectDialog";
+import { ImportItemsSheet } from "@/components/integrations/ImportItemsSheet";
+import { ConfirmDeleteDialog as IntegrationDeleteDialog } from "@/components/ConfirmDeleteDialog";
 import {
   AreaChart,
   Area,
@@ -139,8 +146,10 @@ export function ProjectDetail() {
   const [tasksPage, setTasksPage] = useState(0);
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState("");
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [importLink, setImportLink] = useState<any>(null);
 
-  const VALID_TABS = ["overview", "repos", "documents", "tasks", "usage"] as const;
+  const VALID_TABS = ["overview", "repos", "documents", "tasks", "integrations", "usage"] as const;
   const tab = useMemo(() => {
     const t = searchParams.get("tab");
     return VALID_TABS.includes(t as any) ? t! : "overview";
@@ -161,6 +170,12 @@ export function ProjectDetail() {
   const { data: projectTasks = [] } = useQuery({
     queryKey: ["tasks", { projectId: id }],
     queryFn: () => api.tasks.list({ projectId: id! }),
+    enabled: !!id,
+  });
+
+  const { data: integrationLinks = [], refetch: refetchLinks } = useQuery({
+    queryKey: ["integration-links", id],
+    queryFn: () => api.integrations.projectLinks(id!),
     enabled: !!id,
   });
 
@@ -210,6 +225,15 @@ export function ProjectDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["project", id] });
     },
+  });
+
+  const unlinkMutation = useMutation({
+    mutationFn: (linkId: string) => api.integrations.deleteLink(linkId),
+    onSuccess: () => {
+      refetchLinks();
+      toast.success("Link removed");
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   if (isLoading) {
@@ -336,6 +360,7 @@ export function ProjectDetail() {
           <TabsTrigger value="repos">Repos ({project.repoCount})</TabsTrigger>
           <TabsTrigger value="documents">Documents ({project.docCount})</TabsTrigger>
           <TabsTrigger value="tasks">Tasks ({totalTasks})</TabsTrigger>
+          <TabsTrigger value="integrations">Integrations ({integrationLinks.length})</TabsTrigger>
           <TabsTrigger value="usage">Usage</TabsTrigger>
         </TabsList>
 
@@ -591,6 +616,65 @@ export function ProjectDetail() {
           )}
         </TabsContent>
 
+        {/* Integrations Tab */}
+        <TabsContent value="integrations" className="space-y-3">
+          <div className="flex justify-end">
+            <Button size="sm" onClick={() => setLinkDialogOpen(true)}>
+              <Link2 className="h-4 w-4" />
+              Link External Source
+            </Button>
+          </div>
+          {integrationLinks.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                <Unplug className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
+                No external sources linked. Connect and link a Jira project, Sentry project, or other source.
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              {integrationLinks.map((link: any) => (
+                <div key={link.id} className="flex items-center gap-3 rounded-lg border p-3">
+                  <ProviderIcon provider={link.integration?.provider} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">
+                      {link.integration?.displayName}: {link.externalProjectName}
+                    </p>
+                    {link.externalProjectUrl && (
+                      <a href={link.externalProjectUrl} target="_blank" rel="noopener noreferrer"
+                        className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+                        {link.externalProjectKey || link.externalProjectUrl}
+                        <ExternalLink className="h-2.5 w-2.5" />
+                      </a>
+                    )}
+                  </div>
+                  <Badge variant="secondary" className="text-[10px]">
+                    {link.importCount} imported
+                  </Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setImportLink(link)}
+                  >
+                    <Import className="h-3.5 w-3.5 mr-1" />
+                    Browse & Import
+                  </Button>
+                  <IntegrationDeleteDialog
+                    title="Unlink external source"
+                    description="This will remove the link. Imported tasks will not be deleted."
+                    onConfirm={() => unlinkMutation.mutate(link.id)}
+                    trigger={
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive">
+                        <Unplug className="h-3.5 w-3.5" />
+                      </Button>
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
         {/* Usage Tab */}
         <TabsContent value="usage" className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -651,6 +735,26 @@ export function ProjectDetail() {
         open={addRepoOpen}
         onOpenChange={setAddRepoOpen}
       />
+
+      <LinkExternalProjectDialog
+        open={linkDialogOpen}
+        onOpenChange={setLinkDialogOpen}
+        projectId={id!}
+        onLinked={() => refetchLinks()}
+      />
+
+      {importLink && (
+        <ImportItemsSheet
+          open={!!importLink}
+          onOpenChange={(open) => !open && setImportLink(null)}
+          link={importLink}
+          repos={project.repos || []}
+          onImported={() => {
+            refetchLinks();
+            queryClient.invalidateQueries({ queryKey: ["tasks", { projectId: id }] });
+          }}
+        />
+      )}
     </div>
   );
 }

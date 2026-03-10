@@ -3,7 +3,7 @@ export type RepoStatus = "idle" | "scanning" | "error";
 export type TaskType = "improvement" | "bugfix" | "feature" | "refactor" | "security";
 export type TaskPriority = "low" | "medium" | "high" | "critical";
 export type TaskStatus = "planning" | "awaiting_input" | "planned" | "pending" | "in_progress" | "completed" | "failed" | "cancelled";
-export type TaskSource = "auto_scan" | "manual";
+export type TaskSource = "auto_scan" | "manual" | "external_import";
 export type ScanStatus = "in_progress" | "completed" | "failed";
 
 export interface UserDTO {
@@ -118,3 +118,78 @@ export interface ApiError {
 }
 
 export type ApiResult<T> = ApiResponse<T> | ApiError;
+
+// --- Integration types ---
+
+export type IntegrationProvider = "linear" | "github_issues" | "jira" | "sentry" | "azure_devops" | "asana";
+export type IntegrationAuthType = "oauth2" | "api_token";
+export type IntegrationStatus = "connected" | "error" | "expired";
+export type IntegrationCategory = "project_management" | "monitoring";
+
+export interface IntegrationProviderMeta {
+  type: IntegrationProvider;
+  name: string;
+  category: IntegrationCategory;
+  authMethod: IntegrationAuthType;
+  description: string;
+  itemNoun: string;
+  configFields?: { key: string; label: string; placeholder: string; required: boolean }[];
+}
+
+export interface ExternalProject {
+  id: string;
+  name: string;
+  key: string;
+  url: string | null;
+  description: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface ExternalItem {
+  id: string;
+  title: string;
+  description: string;
+  url: string | null;
+  type: string;
+  status: string;
+  priority: string | null;
+  labels: string[];
+  assignee: string | null;
+  createdAt: string;
+  updatedAt: string;
+  itemType: "issue" | "bug" | "story" | "error" | "incident" | "alert" | "work_item";
+  metadata: Record<string, unknown>;
+}
+
+export interface ExternalItemDetail extends ExternalItem {
+  comments: { id: string; author: string; body: string; createdAt: string }[];
+  stackTrace: string | null;
+  rawPayload: Record<string, unknown>;
+}
+
+export interface IntegrationDTO {
+  id: string;
+  provider: IntegrationProvider;
+  authType: IntegrationAuthType;
+  status: IntegrationStatus;
+  displayName: string;
+  accountEmail: string | null;
+  config: Record<string, unknown>;
+  lastSyncedAt: string | null;
+  lastError: string | null;
+  linkCount: number;
+  createdAt: string;
+}
+
+export interface IntegrationLinkDTO {
+  id: string;
+  integrationId: string;
+  projectId: string;
+  externalProjectId: string;
+  externalProjectName: string;
+  externalProjectKey: string;
+  externalProjectUrl: string | null;
+  lastSyncedAt: string | null;
+  importCount: number;
+  integration?: { provider: IntegrationProvider; displayName: string };
+}

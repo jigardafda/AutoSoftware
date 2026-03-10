@@ -52,3 +52,90 @@ export const OAUTH_CONFIGS = {
     scopes: "repository account pullrequest:write",
   },
 } as const;
+
+import type { IntegrationProviderMeta, IntegrationProvider } from "./types.js";
+
+export const INTEGRATION_PROVIDERS: IntegrationProviderMeta[] = [
+  {
+    type: "linear",
+    name: "Linear",
+    category: "project_management",
+    authMethod: "oauth2",
+    description: "Issue tracking and project management",
+    itemNoun: "issues",
+  },
+  {
+    type: "github_issues",
+    name: "GitHub Issues",
+    category: "project_management",
+    authMethod: "api_token",
+    description: "Issue tracking via GitHub repositories",
+    itemNoun: "issues",
+  },
+  {
+    type: "jira",
+    name: "Jira",
+    category: "project_management",
+    authMethod: "oauth2",
+    description: "Issue and project tracking by Atlassian",
+    itemNoun: "issues",
+    configFields: [
+      { key: "cloudId", label: "Cloud ID", placeholder: "Auto-detected on connect", required: false },
+    ],
+  },
+  {
+    type: "sentry",
+    name: "Sentry",
+    category: "monitoring",
+    authMethod: "api_token",
+    description: "Error monitoring and performance tracking",
+    itemNoun: "errors",
+    configFields: [
+      { key: "orgSlug", label: "Organization Slug", placeholder: "my-org", required: true },
+    ],
+  },
+  {
+    type: "azure_devops",
+    name: "Azure DevOps",
+    category: "project_management",
+    authMethod: "oauth2",
+    description: "Work item tracking and project management",
+    itemNoun: "work items",
+    configFields: [
+      { key: "organization", label: "Organization", placeholder: "my-org", required: true },
+    ],
+  },
+  {
+    type: "asana",
+    name: "Asana",
+    category: "project_management",
+    authMethod: "oauth2",
+    description: "Task and project management",
+    itemNoun: "tasks",
+  },
+];
+
+export const INTEGRATION_OAUTH_CONFIGS: Partial<Record<IntegrationProvider, {
+  authUrl: string; tokenUrl: string; scopes: string;
+}>> = {
+  linear: {
+    authUrl: "https://linear.app/oauth/authorize",
+    tokenUrl: "https://api.linear.app/oauth/token",
+    scopes: "read write issues:create",
+  },
+  jira: {
+    authUrl: "https://auth.atlassian.com/authorize",
+    tokenUrl: "https://auth.atlassian.com/oauth/token",
+    scopes: "read:jira-work write:jira-work offline_access",
+  },
+  asana: {
+    authUrl: "https://app.asana.com/-/oauth_authorize",
+    tokenUrl: "https://app.asana.com/-/oauth_token",
+    scopes: "default",
+  },
+  azure_devops: {
+    authUrl: "https://app.vssps.visualstudio.com/oauth2/authorize",
+    tokenUrl: "https://app.vssps.visualstudio.com/oauth2/token",
+    scopes: "vso.work_full",
+  },
+};
