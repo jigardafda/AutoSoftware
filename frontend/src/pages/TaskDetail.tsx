@@ -726,10 +726,16 @@ export function TaskDetail() {
             Created {relativeTime(task.createdAt)}
           </span>
           {task.completedAt && (
-            <span className="flex items-center gap-1">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              Completed {relativeTime(task.completedAt)}
-            </span>
+            <>
+              <span className="flex items-center gap-1">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Completed {relativeTime(task.completedAt)}
+              </span>
+              <span className="flex items-center gap-1">
+                <Timer className="h-3.5 w-3.5" />
+                Duration: {formatDuration(task.createdAt, task.completedAt)}
+              </span>
+            </>
           )}
         </div>
 
@@ -803,9 +809,9 @@ export function TaskDetail() {
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="usage">Usage</TabsTrigger>
             <TabsTrigger value="pull-request">Pull Request</TabsTrigger>
             <TabsTrigger value="commits">Commits</TabsTrigger>
+            <TabsTrigger value="usage">Usage</TabsTrigger>
           </TabsList>
         </div>
 

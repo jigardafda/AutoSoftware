@@ -84,6 +84,23 @@ function formatTokens(tokens: number): string {
   return tokens.toString();
 }
 
+function formatDuration(startStr: string | null, endStr: string | null): string {
+  if (!startStr || !endStr) return "-";
+  const start = new Date(startStr).getTime();
+  const end = new Date(endStr).getTime();
+  const diffMs = end - start;
+
+  if (diffMs < 1000) return "<1s";
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${remainingSeconds}s`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}h ${remainingMinutes}m`;
+}
+
 function ProviderIcon({ provider }: { provider: string }) {
   switch (provider) {
     case "github":
@@ -567,6 +584,7 @@ export function RepoDetail() {
                       <TableHead className="w-20">Priority</TableHead>
                       <TableHead className="w-16">Source</TableHead>
                       <TableHead className="w-8">PR</TableHead>
+                      <TableHead className="w-20">Duration</TableHead>
                       <TableHead className="w-20 text-right">Created</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -622,6 +640,9 @@ export function RepoDetail() {
                             ) : (
                               <span className="text-muted-foreground/40">-</span>
                             )}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {formatDuration(task.createdAt, task.completedAt)}
                           </TableCell>
                           <TableCell className="text-right text-xs text-muted-foreground">{relativeTime(task.createdAt)}</TableCell>
                         </TableRow>
