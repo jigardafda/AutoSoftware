@@ -5,10 +5,16 @@ import path from "path";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
+function requireEnv(name: string): string {
+  const val = process.env[name];
+  if (!val) throw new Error(`Missing required environment variable: ${name}. Copy .env.example to .env and fill in required values.`);
+  return val;
+}
+
 export const config = {
   port: parseInt(process.env.PORT || "5002"),
   databaseUrl: process.env.DATABASE_URL!,
-  sessionSecret: process.env.SESSION_SECRET || "dev-secret-change-me",
+  sessionSecret: requireEnv("SESSION_SECRET"),
   frontendUrl: process.env.FRONTEND_URL || "http://localhost:5001",
   backendUrl: process.env.BACKEND_URL || "http://localhost:5002",
   github: {
@@ -40,6 +46,6 @@ export const config = {
     clientSecret: process.env.AZURE_DEVOPS_CLIENT_SECRET || "",
   },
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
-  apiKeyEncryptionSecret: process.env.API_KEY_ENCRYPTION_SECRET || "",
+  apiKeyEncryptionSecret: requireEnv("API_KEY_ENCRYPTION_SECRET"),
   workDir: process.env.WORK_DIR || "/tmp/autosoftware-workspaces",
 };
