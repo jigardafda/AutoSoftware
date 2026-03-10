@@ -7,6 +7,7 @@ import { Pagination, paginate } from "@/components/Pagination";
 import { useSort, type SortConfig } from "@/hooks/useSort";
 import { Plus, Loader2, CheckCircle2, BrainCircuit, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { RefreshButton } from "@/components/RefreshButton";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TaskFilters } from "@/components/tasks/TaskFilters";
@@ -170,6 +171,7 @@ export function Tasks() {
               {tasks.length}
             </Badge>
           )}
+          <RefreshButton queryKeys={[["tasks", queryParams]]} />
         </div>
         <Button size="sm" onClick={() => setSheetOpen(true)}>
           <Plus className="h-4 w-4 mr-1" />
@@ -186,54 +188,56 @@ export function Tasks() {
 
       {/* Bulk actions bar */}
       {selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 rounded-md border bg-muted/50 px-3 py-2 text-sm">
+        <div className="flex items-center justify-between rounded-md border bg-muted/50 px-3 py-2 text-sm">
           <span className="text-muted-foreground">
             {selectedIds.size} selected
           </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handlePlanSelected}
-            disabled={planMutation.isPending}
-          >
-            {planMutation.isPending ? (
-              <Loader2 className="h-3 w-3 animate-spin mr-1" />
-            ) : (
-              <BrainCircuit className="h-3 w-3 mr-1" />
-            )}
-            Plan Selected
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={handleCancelSelected}
-            disabled={cancelMutation.isPending}
-          >
-            {cancelMutation.isPending ? (
-              <Loader2 className="h-3 w-3 animate-spin mr-1" />
-            ) : null}
-            Cancel Selected
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => setDeleteDialogOpen(true)}
-            disabled={bulkDeleteMutation.isPending}
-          >
-            {bulkDeleteMutation.isPending ? (
-              <Loader2 className="h-3 w-3 animate-spin mr-1" />
-            ) : (
-              <Trash2 className="h-3 w-3 mr-1" />
-            )}
-            Delete Selected
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setSelectedIds(new Set())}
-          >
-            Deselect
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePlanSelected}
+              disabled={planMutation.isPending}
+            >
+              {planMutation.isPending ? (
+                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+              ) : (
+                <BrainCircuit className="h-3 w-3 mr-1" />
+              )}
+              Plan Selected
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleCancelSelected}
+              disabled={cancelMutation.isPending}
+            >
+              {cancelMutation.isPending ? (
+                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+              ) : null}
+              Cancel Selected
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setDeleteDialogOpen(true)}
+              disabled={bulkDeleteMutation.isPending}
+            >
+              {bulkDeleteMutation.isPending ? (
+                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+              ) : (
+                <Trash2 className="h-3 w-3 mr-1" />
+              )}
+              Delete Selected
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedIds(new Set())}
+            >
+              Deselect
+            </Button>
+          </div>
         </div>
       )}
 

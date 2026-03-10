@@ -1,6 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "../db.js";
-import { config } from "../config.js";
+import { simpleQuery, recordUsage } from "../services/claude-query.js";
+import { setupAgentSdkAuth, resolveAuth, isValidAuth } from "../services/api-key-resolver.js";
 
 const MAX_CLARIFICATION_ROUNDS = 2;
 const MAX_QUESTIONS_PER_ROUND = 5;
@@ -11,7 +11,9 @@ export async function handleEmbedScreening(jobs: { data: { submissionId: string 
   const submission = await prisma.embedSubmission.findUnique({
     where: { id: submissionId },
     include: {
-      project: true,
+      project: {
+        include: { user: true },
+      },
       questions: { orderBy: [{ round: "asc" }, { sortOrder: "asc" }] },
     },
   });
@@ -30,14 +32,27 @@ export async function handleEmbedScreening(jobs: { data: { submissionId: string 
     return;
   }
 
+  // Set up authentication (OAuth or API key)
+  const auth = await resolveAuth(submission.project.userId);
+  if (!isValidAuth(auth)) {
+    console.error("Embed screening aborted: No authentication configured");
+    await prisma.embedSubmission.update({
+      where: { id: submissionId },
+      data: {
+        screeningStatus: "pending",
+        metadata: { error: "No authentication configured" },
+      },
+    });
+    return;
+  }
+  setupAgentSdkAuth(auth);
+
   await prisma.embedSubmission.update({
     where: { id: submissionId },
     data: { screeningStatus: "screening" },
   });
 
   try {
-    const anthropic = new Anthropic({ apiKey: config.anthropicApiKey });
-
     // Build context from previous rounds
     let previousContext = "";
     if (submission.questions.length > 0) {
@@ -60,24 +75,8 @@ export async function handleEmbedScreening(jobs: { data: { submissionId: string 
       (a) => `${a.filename} (${a.mimeType}, ${Math.round(a.size / 1024)}KB)`
     ).join(", ");
 
-    const prompt = `You are evaluating a requirement submission for the software project "${submission.project.name}".
-
-Title: ${submission.title}
-Description: ${submission.description}
-Input method: ${submission.inputMethod}
-${attachmentInfo ? `Attachments: ${attachmentInfo}` : ""}
-${previousContext}
-
-Evaluate this submission and respond with JSON only (no markdown code blocks):
-
-If the submission is clear enough to be a valid software requirement, respond:
-{"status": "ready", "score": <1-10>, "reason": "<brief explanation>"}
-
-If you need more information to properly evaluate (and this is round ${submission.clarificationRound + 1} of max ${MAX_CLARIFICATION_ROUNDS}), respond:
-{"status": "needs_input", "score": <1-10 preliminary>, "reason": "<why more info needed>", "questions": [{"questionKey": "<snake_case_id>", "label": "<question text>", "type": "<select|multi_select|confirm|text>", "options": [{"value": "<val>", "label": "<display>"}], "required": true}]}
-
-If the submission is spam, gibberish, or completely irrelevant, respond:
-{"status": "rejected", "score": <1-3>, "reason": "<brief explanation>"}
+    const systemPrompt = `You are evaluating a requirement submission for a software project.
+Respond with JSON only (no markdown code blocks).
 
 Score guidelines:
 - 8-10: Clear, actionable requirement with good detail
@@ -87,13 +86,40 @@ Score guidelines:
 
 Maximum ${MAX_QUESTIONS_PER_ROUND} questions per round. Prefer select/multi_select over text when possible.`;
 
-    const response = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 1024,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const userPrompt = `Evaluate this submission for the software project "${submission.project.name}":
 
-    const text = response.content[0].type === "text" ? response.content[0].text : "";
+Title: ${submission.title}
+Description: ${submission.description}
+Input method: ${submission.inputMethod}
+${attachmentInfo ? `Attachments: ${attachmentInfo}` : ""}
+${previousContext}
+
+If the submission is clear enough to be a valid software requirement, respond:
+{"status": "ready", "score": <1-10>, "reason": "<brief explanation>"}
+
+If you need more information to properly evaluate (and this is round ${submission.clarificationRound + 1} of max ${MAX_CLARIFICATION_ROUNDS}), respond:
+{"status": "needs_input", "score": <1-10 preliminary>, "reason": "<why more info needed>", "questions": [{"questionKey": "<snake_case_id>", "label": "<question text>", "type": "<select|multi_select|confirm|text>", "options": [{"value": "<val>", "label": "<display>"}], "required": true}]}
+
+If the submission is spam, gibberish, or completely irrelevant, respond:
+{"status": "rejected", "score": <1-3>, "reason": "<brief explanation>"}`;
+
+    // Use Agent SDK (supports OAuth!) with usage tracking
+    const model = "claude-haiku-4-5-20251001";
+    const { result: text, usage } = await simpleQuery(systemPrompt, userPrompt, { model });
+
+    // Record usage if using a stored API key
+    if (auth.apiKeyId) {
+      await recordUsage(
+        auth.apiKeyId,
+        model,
+        usage.inputTokens,
+        usage.outputTokens,
+        usage.costUsd,
+        "embed_screen",
+        submissionId
+      );
+    }
+
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       throw new Error("Failed to parse screening response");

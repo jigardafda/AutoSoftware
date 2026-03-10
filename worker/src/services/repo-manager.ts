@@ -24,7 +24,10 @@ export async function cloneOrPullRepo(
 
   if (existsSync(path.join(repoDir, ".git"))) {
     const repoGit = simpleGit(repoDir);
-    await repoGit.pull();
+    // Use fetch instead of pull to avoid issues with detached HEAD state
+    // (e.g., after planning checked out origin/branch)
+    // Callers will checkout the specific branch they need
+    await repoGit.fetch("origin");
   } else {
     await git.clone(authedUrl, repoDir);
   }
@@ -34,13 +37,35 @@ export async function cloneOrPullRepo(
 
 export async function createWorktree(
   repoDir: string,
-  branchName: string
+  branchName: string,
+  baseBranch?: string
 ): Promise<string> {
   const worktreeDir = path.join(config.workDir, "worktrees", branchName);
   await mkdir(path.dirname(worktreeDir), { recursive: true });
 
   const git = simpleGit(repoDir);
-  await git.raw(["worktree", "add", "-b", branchName, worktreeDir]);
+
+  // Prune stale worktree entries
+  try {
+    await git.raw(["worktree", "prune"]);
+  } catch {
+    // Ignore prune errors
+  }
+
+  if (baseBranch) {
+    // Fetch the target branch to ensure we have the latest
+    try {
+      await git.fetch("origin", baseBranch);
+    } catch (err) {
+      console.warn(`Failed to fetch branch ${baseBranch}, will try to use existing ref:`, err);
+    }
+
+    // Create worktree with new branch based on the target branch
+    await git.raw(["worktree", "add", "-b", branchName, worktreeDir, `origin/${baseBranch}`]);
+  } else {
+    // Create worktree with new branch from HEAD (existing behavior)
+    await git.raw(["worktree", "add", "-b", branchName, worktreeDir]);
+  }
 
   return worktreeDir;
 }

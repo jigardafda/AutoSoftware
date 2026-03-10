@@ -12,12 +12,13 @@ interface FileViewerProps {
   repoId: string;
   filePath: string | null;
   highlightLine?: number;
+  branch?: string | null;
 }
 
-export function FileViewer({ repoId, filePath, highlightLine }: FileViewerProps) {
+export function FileViewer({ repoId, filePath, highlightLine, branch }: FileViewerProps) {
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["repo-file", repoId, filePath],
-    queryFn: () => api.repos.file(repoId, filePath!),
+    queryKey: ["repo-file", repoId, filePath, branch],
+    queryFn: () => api.repos.file(repoId, filePath!, branch || undefined),
     enabled: !!filePath,
   });
 

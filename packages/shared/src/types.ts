@@ -4,7 +4,8 @@ export type TaskType = "improvement" | "bugfix" | "feature" | "refactor" | "secu
 export type TaskPriority = "low" | "medium" | "high" | "critical";
 export type TaskStatus = "planning" | "awaiting_input" | "planned" | "pending" | "in_progress" | "completed" | "failed" | "cancelled";
 export type TaskSource = "auto_scan" | "manual" | "external_import" | "embed";
-export type ScanStatus = "in_progress" | "completed" | "failed";
+export type ScanStatus = "queued" | "in_progress" | "completed" | "failed" | "cancelled";
+export type ScanSource = "manual" | "scheduled";
 
 export interface UserDTO {
   id: string;
@@ -35,6 +36,7 @@ export interface TaskDTO {
   priority: TaskPriority;
   status: TaskStatus;
   source: TaskSource;
+  targetBranch: string | null;
   planningRound: number;
   enhancedPlan: string | null;
   affectedFiles: string[];
@@ -73,9 +75,15 @@ export interface ScanResultDTO {
   id: string;
   repositoryId: string;
   scannedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
   status: ScanStatus;
+  source: ScanSource;
   summary: string | null;
   tasksCreated: number;
+  inputTokens: number;
+  outputTokens: number;
+  estimatedCostUsd: number;
 }
 
 export interface CreateTaskInput {
@@ -84,6 +92,12 @@ export interface CreateTaskInput {
   description: string;
   type: TaskType;
   priority: TaskPriority;
+  targetBranch?: string;
+}
+
+export interface BranchInfo {
+  name: string;
+  isDefault: boolean;
 }
 
 export interface UpdateTaskInput {
@@ -91,6 +105,7 @@ export interface UpdateTaskInput {
   description?: string;
   priority?: TaskPriority;
   status?: TaskStatus;
+  targetBranch?: string | null;
 }
 
 export interface ConnectRepoInput {
@@ -104,7 +119,45 @@ export interface ConnectRepoInput {
 export interface UpdateRepoInput {
   isActive?: boolean;
   scanInterval?: number;
+  defaultBranch?: string;
   settings?: Record<string, unknown>;
+}
+
+// --- Project types ---
+
+export interface ProjectDTO {
+  id: string;
+  name: string;
+  description: string;
+  defaultBranch: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectRepositoryDTO {
+  id: string;
+  projectId: string;
+  repositoryId: string;
+  branchOverride: string | null;
+  addedAt: string;
+  repository: {
+    id: string;
+    fullName: string;
+    provider: OAuthProvider;
+    defaultBranch: string;
+  };
+  // Computed field: effective branch for this repo in this project
+  effectiveBranch: string;
+}
+
+export interface UpdateProjectInput {
+  name?: string;
+  description?: string;
+  defaultBranch?: string | null;
+}
+
+export interface UpdateProjectRepoInput {
+  branchOverride?: string | null;
 }
 
 export interface ApiResponse<T> {

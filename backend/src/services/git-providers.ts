@@ -1,4 +1,4 @@
-import type { OAuthProvider } from "@autosoftware/shared";
+import type { OAuthProvider, BranchInfo } from "@autosoftware/shared";
 
 interface ProviderRepo {
   id: string;
@@ -16,11 +16,16 @@ export async function listRemoteRepos(
   switch (provider) {
     case "github": {
       const res = await fetch(
-        "https://api.github.com/user/repos?sort=updated&per_page=100",
+        "https://api.github.com/user/repos?sort=updated&per_page=100&affiliation=owner,collaborator,organization_member",
         { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } }
       );
-      if (!res.ok) throw new Error("Failed to fetch GitHub repos");
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error(`GitHub API error (${res.status}):`, errorText);
+        throw new Error(`Failed to fetch GitHub repos: ${res.status}`);
+      }
       const data = await res.json();
+      console.log(`GitHub returned ${data.length} repos`);
       return data.map((r: any) => ({
         id: String(r.id),
         fullName: r.full_name,
@@ -68,6 +73,83 @@ export async function listRemoteRepos(
         description: r.description,
         isPrivate: r.is_private,
       }));
+    }
+  }
+}
+
+export async function listRemoteBranches(
+  provider: OAuthProvider,
+  accessToken: string,
+  repoFullName: string,
+  defaultBranch: string
+): Promise<BranchInfo[]> {
+  switch (provider) {
+    case "github": {
+      const res = await fetch(
+        `https://api.github.com/repos/${repoFullName}/branches?per_page=100`,
+        { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } }
+      );
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error(`GitHub branches API error (${res.status}):`, errorText);
+        if (res.status === 429) throw new Error("Rate limited by GitHub. Please try again later.");
+        throw new Error(`Failed to fetch GitHub branches: ${res.status}`);
+      }
+      const data = await res.json();
+      const branches: BranchInfo[] = data.map((b: any) => ({
+        name: b.name,
+        isDefault: b.name === defaultBranch,
+      }));
+      // Sort: default branch first, then alphabetically
+      branches.sort((a, b) => {
+        if (a.isDefault) return -1;
+        if (b.isDefault) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      return branches;
+    }
+    case "gitlab": {
+      const projectId = encodeURIComponent(repoFullName);
+      const res = await fetch(
+        `https://gitlab.com/api/v4/projects/${projectId}/repository/branches?per_page=100`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (!res.ok) {
+        if (res.status === 429) throw new Error("Rate limited by GitLab. Please try again later.");
+        throw new Error(`Failed to fetch GitLab branches: ${res.status}`);
+      }
+      const data = await res.json();
+      const branches: BranchInfo[] = data.map((b: any) => ({
+        name: b.name,
+        isDefault: b.default || b.name === defaultBranch,
+      }));
+      branches.sort((a, b) => {
+        if (a.isDefault) return -1;
+        if (b.isDefault) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      return branches;
+    }
+    case "bitbucket": {
+      const res = await fetch(
+        `https://api.bitbucket.org/2.0/repositories/${repoFullName}/refs/branches?pagelen=100`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (!res.ok) {
+        if (res.status === 429) throw new Error("Rate limited by Bitbucket. Please try again later.");
+        throw new Error(`Failed to fetch Bitbucket branches: ${res.status}`);
+      }
+      const data = await res.json();
+      const branches: BranchInfo[] = (data.values || []).map((b: any) => ({
+        name: b.name,
+        isDefault: b.name === defaultBranch,
+      }));
+      branches.sort((a, b) => {
+        if (a.isDefault) return -1;
+        if (b.isDefault) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      return branches;
     }
   }
 }

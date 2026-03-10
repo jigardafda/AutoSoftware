@@ -13,6 +13,7 @@ import {
   LogOut,
   User,
   FolderKanban,
+  Puzzle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -20,7 +21,6 @@ import { Logo, LogoIcon } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { Separator } from "@/components/ui/separator";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,6 +43,10 @@ const navItems = [
   { to: "/scans", label: "Scans", icon: Search },
   { to: "/activity", label: "Activity", icon: Activity },
   { to: "/queues", label: "Queues", icon: Layers },
+];
+
+const bottomNavItems = [
+  { to: "/plugins", label: "Plugins", icon: Puzzle },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -76,49 +80,85 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "hidden lg:flex flex-col bg-card border-r border-border transition-all duration-200",
-        collapsed ? "w-16" : "w-60"
+        "hidden lg:flex flex-col bg-card/50 backdrop-blur-sm border-r border-border/50 transition-all duration-300 ease-out",
+        collapsed ? "w-[68px]" : "w-[240px]"
       )}
     >
-      {/* Top: Logo + collapse toggle */}
-      <div className="flex items-center justify-between h-12 px-3 border-b border-border">
+      {/* Logo section */}
+      <div className={cn(
+        "relative flex items-center h-14 border-b border-border/50",
+        collapsed ? "justify-center px-2" : "justify-between px-4"
+      )}>
         {collapsed ? (
-          <LogoIcon className="h-6 w-6" />
+          <LogoIcon className="h-7 w-7" />
         ) : (
-          <Logo iconClassName="h-6 w-6" />
+          <Logo iconClassName="h-7 w-7" />
         )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 shrink-0"
-          onClick={() => setCollapsed(!collapsed)}
-        >
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
+        {!collapsed && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => setCollapsed(!collapsed)}
+          >
             <ChevronLeft className="h-4 w-4" />
-          )}
-        </Button>
+          </Button>
+        )}
       </div>
 
-      {/* Nav items */}
-      <ScrollArea className="flex-1">
+      {/* Expand button when collapsed - positioned below logo */}
+      {collapsed && (
+        <div className="flex justify-center py-2 border-b border-border/50">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => setCollapsed(!collapsed)}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+
+      {/* Main navigation */}
+      <ScrollArea className="flex-1 py-3">
         <TooltipProvider delayDuration={0}>
-          <nav className="flex flex-col gap-1 p-2">
+          <nav className={cn("flex flex-col gap-1", collapsed ? "px-2" : "px-3")}>
+            {/* Section label */}
+            {!collapsed && (
+              <span className="px-3 py-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
+                Navigation
+              </span>
+            )}
+
             {navItems.map(({ to, label, icon: Icon }) => {
-              const active = location.pathname.startsWith(to);
+              const active = location.pathname === to ||
+                (to !== "/dashboard" && location.pathname.startsWith(to));
+
               const linkContent = (
                 <Link
                   to={to}
                   className={cn(
-                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                    "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
                     active
-                      ? "bg-accent text-accent-foreground"
-                      : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground",
-                    collapsed && "justify-center px-0"
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                    collapsed && "justify-center px-0 py-2.5"
                   )}
                 >
-                  <Icon className="h-4 w-4 shrink-0" />
+                  {/* Active indicator */}
+                  {active && (
+                    <span
+                      className={cn(
+                        "absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-primary transition-all",
+                        collapsed && "left-0"
+                      )}
+                    />
+                  )}
+                  <Icon className={cn(
+                    "h-[18px] w-[18px] shrink-0 transition-transform duration-200",
+                    !active && "group-hover:scale-110"
+                  )} />
                   {!collapsed && <span>{label}</span>}
                 </Link>
               );
@@ -127,7 +167,9 @@ export function Sidebar() {
                 return (
                   <Tooltip key={to}>
                     <TooltipTrigger asChild>{linkContent}</TooltipTrigger>
-                    <TooltipContent side="right">{label}</TooltipContent>
+                    <TooltipContent side="right" className="font-medium">
+                      {label}
+                    </TooltipContent>
                   </Tooltip>
                 );
               }
@@ -138,21 +180,67 @@ export function Sidebar() {
         </TooltipProvider>
       </ScrollArea>
 
-      <Separator />
+      {/* Bottom section */}
+      <div className={cn(
+        "border-t border-border/50",
+        collapsed ? "px-2 py-3" : "px-3 py-3"
+      )}>
+        <TooltipProvider delayDuration={0}>
+          {/* Settings */}
+          {bottomNavItems.map(({ to, label, icon: Icon }) => {
+            const active = location.pathname.startsWith(to);
+            const linkContent = (
+              <Link
+                to={to}
+                className={cn(
+                  "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                  active
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  collapsed && "justify-center px-0 py-2.5"
+                )}
+              >
+                {active && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-primary" />
+                )}
+                <Icon className={cn(
+                  "h-[18px] w-[18px] shrink-0 transition-transform duration-200",
+                  !active && "group-hover:scale-110"
+                )} />
+                {!collapsed && <span>{label}</span>}
+              </Link>
+            );
 
-      {/* User section */}
-      <div className="p-2">
+            if (collapsed) {
+              return (
+                <Tooltip key={to}>
+                  <TooltipTrigger asChild>{linkContent}</TooltipTrigger>
+                  <TooltipContent side="right" className="font-medium">
+                    {label}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            }
+
+            return <div key={to}>{linkContent}</div>;
+          })}
+        </TooltipProvider>
+
+        {/* User menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               className={cn(
-                "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent/50",
+                "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 mt-1 text-sm transition-all duration-200",
+                "hover:bg-accent/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 collapsed && "justify-center px-0"
               )}
             >
-              <Avatar className="h-7 w-7 shrink-0">
+              <Avatar className="h-8 w-8 shrink-0 ring-2 ring-border/50">
                 {user?.avatarUrl && <AvatarImage src={user.avatarUrl} alt={user.name ?? ""} />}
-                <AvatarFallback className="text-xs">{initials}</AvatarFallback>
+                <AvatarFallback className="text-xs font-medium bg-primary/10 text-primary">
+                  {initials}
+                </AvatarFallback>
               </Avatar>
               {!collapsed && (
                 <div className="flex-1 min-w-0 text-left">
@@ -168,7 +256,18 @@ export function Sidebar() {
               )}
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent side="top" align={collapsed ? "center" : "start"} className="w-56">
+          <DropdownMenuContent
+            side="top"
+            align={collapsed ? "center" : "start"}
+            className="w-56"
+          >
+            <div className="px-2 py-1.5">
+              <p className="text-sm font-medium">{user?.name ?? user?.email}</p>
+              {user?.name && (
+                <p className="text-xs text-muted-foreground">{user.email}</p>
+              )}
+            </div>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => navigate("/settings")}>
               <User className="h-4 w-4" />
               Profile
@@ -178,9 +277,12 @@ export function Sidebar() {
               Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => void logout()}>
+            <DropdownMenuItem
+              onClick={() => void logout()}
+              className="text-destructive focus:text-destructive"
+            >
               <LogOut className="h-4 w-4" />
-              Logout
+              Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

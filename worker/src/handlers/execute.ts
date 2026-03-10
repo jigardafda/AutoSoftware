@@ -1,11 +1,38 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import { prisma } from "../db.js";
 import { simpleGit } from "simple-git";
 import { cloneOrPullRepo, createWorktree, cleanupWorktree } from "../services/repo-manager.js";
 import { createPullRequest } from "./pr-creator.js";
 import { config } from "../config.js";
 import { getProjectContext } from "../services/project-context.js";
-import { resolveApiKey } from "../services/api-key-resolver.js";
+import { resolveAuth, setupAgentSdkAuth, isValidAuth } from "../services/api-key-resolver.js";
+import { agentQueryWithUsage } from "../services/claude-query.js";
+import { getInstalledPluginPaths } from "../services/plugin-manager.js";
+
+interface UserSettings {
+  scanBudget?: number;
+  taskBudget?: number;
+  planBudget?: number;
+}
+
+function getUserBudgets(userSettings: UserSettings | null | undefined) {
+  return {
+    scanBudget: userSettings?.scanBudget ?? config.defaultScanBudget,
+    taskBudget: userSettings?.taskBudget ?? config.defaultTaskBudget,
+    planBudget: userSettings?.planBudget ?? config.defaultPlanBudget,
+  };
+}
+
+async function emitTaskLog(
+  taskId: string,
+  phase: string,
+  level: string,
+  message: string,
+  metadata: Record<string, any> = {}
+) {
+  await prisma.taskLog.create({
+    data: { taskId, phase, level, message, metadata },
+  });
+}
 
 export async function handleTaskExecution(jobs: { data: { taskId: string } }[]) {
   const job = jobs[0];
@@ -17,7 +44,7 @@ export async function handleTaskExecution(jobs: { data: { taskId: string } }[]) 
     include: {
       repository: {
         include: {
-          user: { include: { accounts: true } },
+          user: { select: { id: true, settings: true, accounts: true } },
         },
       },
     },
@@ -29,24 +56,27 @@ export async function handleTaskExecution(jobs: { data: { taskId: string } }[]) 
   }
 
   const repo = task.repository;
+  const userBudgets = getUserBudgets(repo.user?.settings as UserSettings);
 
-  // Resolve API key from DB or env
-  const { key: resolvedKey, apiKeyId } = await resolveApiKey(repo.userId);
+  // Resolve authentication (OAuth token or API key)
+  const auth = await resolveAuth(repo.userId);
+  const { apiKeyId } = auth;
 
-  if (!resolvedKey || resolvedKey === "sk-ant-xxx") {
+  if (!isValidAuth(auth)) {
     await prisma.task.update({
       where: { id: taskId },
       data: {
         status: "failed",
-        metadata: { error: "No API key available. Add one in Settings or set ANTHROPIC_API_KEY in .env." },
+        metadata: { error: "No authentication configured. Set CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY in .env." },
       },
     });
-    console.error("Task aborted: No API key available");
+    console.error("Task aborted: No authentication configured");
     return;
   }
 
-  // Set env for Agent SDK
-  process.env.ANTHROPIC_API_KEY = resolvedKey;
+  // Set up auth for Agent SDK
+  setupAgentSdkAuth(auth);
+  console.log(`Using ${auth.authType === "oauth" ? "OAuth token" : "API key"} for execution`);
 
   const account = repo.user.accounts.find((a: any) => a.provider === repo.provider);
   if (!account) {
@@ -65,23 +95,30 @@ export async function handleTaskExecution(jobs: { data: { taskId: string } }[]) 
     data: { status: "in_progress" },
   });
 
-  const branchName = `autosoftware/${task.type}/${taskId.slice(0, 8)}`;
+  // Unique branch per execution attempt (task ID + timestamp suffix)
+  const attemptSuffix = Date.now().toString(36).slice(-4);
+  const branchName = `autosoftware/${task.type}/${taskId.slice(0, 8)}-${attemptSuffix}`;
   let worktreeDir: string | null = null;
   let repoDir: string | null = null;
 
+  // Determine target branch for worktree creation and PR base
+  const targetBranch = task.targetBranch || repo.defaultBranch;
+
   try {
     repoDir = await cloneOrPullRepo(repo.id, repo.cloneUrl, account.accessToken, repo.provider);
-    worktreeDir = await createWorktree(repoDir, branchName);
+    worktreeDir = await createWorktree(repoDir, branchName, targetBranch);
 
     const projectContext = await getProjectContext(repo.id, task.projectId);
 
-    let resultText = "";
-    let sessionId: string | undefined;
+    // Get installed plugins for this user/project
+    const pluginPaths = await getInstalledPluginPaths(repo.userId, task.projectId);
+    if (pluginPaths.length > 0) {
+      console.log(`Loaded ${pluginPaths.length} plugins for task ${taskId}`);
+    }
 
     const implementationInstructions = task.enhancedPlan || task.description;
 
-    for await (const message of query({
-      prompt: `${projectContext ? projectContext + "\n---\n\n" : ""}You are an expert software engineer. Implement the following task:
+    const executePrompt = `${projectContext ? projectContext + "\n---\n\n" : ""}You are an expert software engineer. Implement the following task:
 
 ## Task: ${task.title}
 
@@ -98,29 +135,48 @@ ${implementationInstructions}
 ## Rules:
 - Follow existing code style
 - Don't break existing functionality
-- Write clean, readable code`,
-      options: {
-        allowedTools: [
-          "Read", "Edit", "Write", "Bash", "Glob", "Grep",
-          "WebSearch", "WebFetch", "Agent",
-        ],
-        permissionMode: "bypassPermissions",
-        maxTurns: 60,
-        maxBudgetUsd: config.defaultTaskBudget,
-        cwd: worktreeDir,
+- Write clean, readable code`;
+
+    await emitTaskLog(taskId, "execute", "step", "Starting implementation...");
+
+    const { result: resultText, sessionId, usage: execUsage } = await agentQueryWithUsage(
+      {
+        prompt: executePrompt,
+        options: {
+          allowedTools: [
+            "Read", "Edit", "Write", "Bash", "Glob", "Grep",
+            "WebSearch", "WebFetch", "Agent", "Skill",
+          ],
+          permissionMode: "bypassPermissions",
+          maxTurns: 60,
+          maxBudgetUsd: userBudgets.taskBudget,
+          cwd: worktreeDir,
+          // Load installed plugins
+          ...(pluginPaths.length > 0 && { plugins: pluginPaths }),
+        },
       },
-    })) {
-      if (message.type === "system" && message.subtype === "init") {
-        sessionId = message.session_id;
+      {
+        apiKeyId,
+        source: "task",
+        sourceId: taskId,
+        onLog: (level, message, metadata) =>
+          emitTaskLog(taskId, "execute", level, message, metadata || {}),
       }
-      if (message.type === "result") {
-        if (message.subtype === "success") {
-          resultText = message.result;
-        } else {
-          throw new Error(`Agent stopped: ${message.subtype}`);
-        }
-      }
-    }
+    );
+
+    console.log(`Execute usage: ~${execUsage.inputTokens} input, ~${execUsage.outputTokens} output, ~$${execUsage.costUsd.toFixed(4)}`);
+
+    // Update task usage counters (increment to add to planning usage)
+    await prisma.task.update({
+      where: { id: taskId },
+      data: {
+        inputTokens: { increment: execUsage.inputTokens },
+        outputTokens: { increment: execUsage.outputTokens },
+        estimatedCostUsd: { increment: execUsage.costUsd },
+      },
+    });
+
+    await emitTaskLog(taskId, "execute", "step", "Pushing changes to remote...");
 
     const git = simpleGit(worktreeDir);
     const log = await git.log({ maxCount: 5 });
@@ -139,7 +195,7 @@ ${implementationInstructions}
         title: `[AutoSoftware] ${task.title}`,
         body: `## Automated Changes\n\n${task.description}\n\n---\n\n### Agent Summary\n\n${resultText}\n\n---\n*Generated by AutoSoftware*`,
         head: branchName,
-        base: repo.defaultBranch,
+        base: targetBranch,
       }
     );
 
@@ -158,25 +214,6 @@ ${implementationInstructions}
         },
       },
     });
-
-    // Record usage if using a DB key
-    if (apiKeyId) {
-      await prisma.apiKeyUsage.create({
-        data: {
-          apiKeyId,
-          model: "claude-sonnet-4-20250514",
-          inputTokens: 0,
-          outputTokens: 0,
-          estimatedCostUsd: 0,
-          source: "task",
-          sourceId: taskId,
-        },
-      });
-      await prisma.apiKey.update({
-        where: { id: apiKeyId },
-        data: { lastUsedAt: new Date(), lastError: null },
-      });
-    }
 
     console.log(`Task ${taskId} completed. PR: ${pr.url}`);
   } catch (err) {

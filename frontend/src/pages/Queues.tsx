@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
+import { RefreshButton } from "@/components/RefreshButton";
 
 type JobState = "created" | "retry" | "active" | "completed" | "cancelled" | "failed";
 
@@ -52,7 +53,10 @@ function CountBadge({ label, count, variant }: { label: string; count: number; v
 
 function timeAgo(date: string | null): string {
   if (!date) return "-";
-  const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
+  const diff = Date.now() - new Date(date).getTime();
+  // Handle future dates (timezone mismatch) gracefully
+  if (diff < 0) return "just now";
+  const seconds = Math.floor(diff / 1000);
   if (seconds < 60) return `${seconds}s ago`;
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
@@ -118,7 +122,10 @@ export function Queues() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Queues</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold">Queues</h2>
+          <RefreshButton queryKeys={["queues", ["queue-jobs", selectedQueue, stateFilter, page]]} />
+        </div>
         <span className="text-sm text-muted-foreground">Auto-refreshes every 5s</span>
       </div>
 

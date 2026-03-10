@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -11,9 +12,15 @@ import {
   Clock,
   Github,
   GitlabIcon,
+  Ban,
+  User,
+  Timer,
+  GitBranch,
+  SkipForward,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { RefreshButton } from "@/components/RefreshButton";
 import {
   Card,
   CardContent,
@@ -55,6 +62,33 @@ function formatTimestamp(dateStr: string): string {
     minute: "2-digit",
     second: "2-digit",
   });
+}
+
+function formatDuration(startedAt: string | null, completedAt: string | null): string {
+  if (!startedAt || !completedAt) return "--";
+  const ms = new Date(completedAt).getTime() - new Date(startedAt).getTime();
+  if (ms < 0) return "--";
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSec = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${remainingSec}s`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMin = minutes % 60;
+  return `${hours}h ${remainingMin}m`;
+}
+
+function formatCost(cost: number): string {
+  if (cost === 0) return "--";
+  if (cost < 0.01) return `$${cost.toFixed(4)}`;
+  return `$${cost.toFixed(2)}`;
+}
+
+function formatTokens(tokens: number): string {
+  if (tokens === 0) return "--";
+  if (tokens >= 1000000) return `${(tokens / 1000000).toFixed(1)}M`;
+  if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}K`;
+  return tokens.toString();
 }
 
 function ProviderIcon({ provider }: { provider: string }) {
@@ -168,6 +202,7 @@ function ScanDetailSkeleton() {
 export function ScanDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const logContainerRef = useRef<HTMLDivElement>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [lastLogId, setLastLogId] = useState<string | null>(null);
@@ -178,7 +213,17 @@ export function ScanDetail() {
     queryFn: () => api.scans.get(id!),
     enabled: !!id,
     refetchInterval: (query) =>
-      query.state.data?.status === "in_progress" ? 3000 : false,
+      query.state.data?.status === "in_progress" || query.state.data?.status === "queued" ? 3000 : false,
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: () => api.scans.cancel(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scan", id] });
+      queryClient.invalidateQueries({ queryKey: ["scans"] });
+      toast.success("Scan cancelled");
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   // Initialize logs from scan data
@@ -228,6 +273,7 @@ export function ScanDetail() {
   };
 
   const isLive = scan?.status === "in_progress";
+  const isWaiting = scan?.status === "queued";
 
   const rawAnalysis = useMemo(() => {
     if (!scan?.analysisData) return null;
@@ -257,16 +303,37 @@ export function ScanDetail() {
 
   return (
     <div className="space-y-6">
-      {/* Back button */}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="gap-1 text-muted-foreground hover:text-foreground -ml-2"
-        onClick={() => navigate("/scans")}
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to Scans
-      </Button>
+      {/* Navigation and actions */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1 text-muted-foreground hover:text-foreground -ml-2"
+            onClick={() => navigate("/scans")}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Scans
+          </Button>
+          <RefreshButton queryKeys={[["scan", id]]} />
+        </div>
+        {(scan.status === "in_progress" || scan.status === "queued") && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-red-500 hover:text-red-600 hover:bg-red-500/10 border-red-500/30"
+            onClick={() => cancelMutation.mutate()}
+            disabled={cancelMutation.isPending}
+          >
+            {cancelMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-1" />
+            ) : (
+              <Ban className="h-4 w-4 mr-1" />
+            )}
+            {scan.status === "queued" ? "Cancel" : "Stop Scan"}
+          </Button>
+        )}
+      </div>
 
       {/* Header */}
       <div className="space-y-3">
@@ -279,7 +346,15 @@ export function ScanDetail() {
 
         {/* Status badge */}
         <div className="flex flex-wrap items-center gap-2">
-          {scan.status === "in_progress" ? (
+          {scan.status === "queued" ? (
+            <Badge
+              variant="outline"
+              className="bg-amber-500/15 text-amber-500 border-amber-500/20"
+            >
+              <Clock className="h-3 w-3 mr-1" />
+              Queued
+            </Badge>
+          ) : scan.status === "in_progress" ? (
             <Badge
               variant="outline"
               className="bg-blue-500/15 text-blue-500 border-blue-500/20 animate-pulse"
@@ -295,6 +370,22 @@ export function ScanDetail() {
               <CheckCircle2 className="h-3 w-3 mr-1" />
               Completed
             </Badge>
+          ) : scan.status === "cancelled" ? (
+            <Badge
+              variant="outline"
+              className="bg-gray-500/15 text-gray-500 border-gray-500/20"
+            >
+              <Ban className="h-3 w-3 mr-1" />
+              Cancelled
+            </Badge>
+          ) : scan.status === "skipped" ? (
+            <Badge
+              variant="outline"
+              className="bg-purple-500/15 text-purple-500 border-purple-500/20"
+            >
+              <SkipForward className="h-3 w-3 mr-1" />
+              Skipped
+            </Badge>
           ) : (
             <Badge
               variant="outline"
@@ -304,18 +395,44 @@ export function ScanDetail() {
               Failed
             </Badge>
           )}
+          {scan.source && (
+            <Badge variant="outline" className="text-xs bg-muted">
+              {scan.source === "manual" ? (
+                <><User className="h-3 w-3 mr-1" /> Manual</>
+              ) : (
+                <><Timer className="h-3 w-3 mr-1" /> Scheduled</>
+              )}
+            </Badge>
+          )}
         </div>
 
         {/* Metadata */}
         <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
           <span className="flex items-center gap-1">
+            <GitBranch className="h-3.5 w-3.5" />
+            {scan.branch || scan.repository?.defaultBranch || "main"}
+          </span>
+          <span className="text-muted-foreground/70">•</span>
+          <span className="flex items-center gap-1">
             <Clock className="h-3.5 w-3.5" />
             Scanned {relativeTime(scan.scannedAt)}
           </span>
-          {scan.status !== "in_progress" && (
-            <span>
-              {scan.tasksCreated} task{scan.tasksCreated !== 1 ? "s" : ""} created
-            </span>
+          {scan.status !== "in_progress" && scan.status !== "queued" && (
+            <>
+              <span>
+                {scan.tasksCreated} task{scan.tasksCreated !== 1 ? "s" : ""} created
+              </span>
+              <span className="text-muted-foreground/70">•</span>
+              <span>Duration: {formatDuration(scan.startedAt, scan.completedAt)}</span>
+              {(scan.inputTokens > 0 || scan.outputTokens > 0) && (
+                <>
+                  <span className="text-muted-foreground/70">•</span>
+                  <span>{formatTokens(scan.inputTokens)} in / {formatTokens(scan.outputTokens)} out</span>
+                  <span className="text-muted-foreground/70">•</span>
+                  <span className="font-medium">{formatCost(scan.estimatedCostUsd)}</span>
+                </>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -335,13 +452,32 @@ export function ScanDetail() {
         </Card>
       )}
 
+      {/* Skipped card */}
+      {scan.status === "skipped" && scan.summary && (
+        <Card className="border-purple-500/30 bg-purple-500/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-purple-500 flex items-center gap-2">
+              <SkipForward className="h-4 w-4" />
+              Scan Skipped
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-purple-400">{scan.summary}</p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Tabs */}
       <Tabs defaultValue="logs" className="space-y-4">
         <div className="overflow-x-auto">
           <TabsList>
             <TabsTrigger value="logs" className="gap-1.5">
               Logs
-              {isLive && (
+              {isWaiting ? (
+                <span className="relative flex h-2 w-2">
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+                </span>
+              ) : isLive && (
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
@@ -381,7 +517,12 @@ export function ScanDetail() {
               >
                 {logs.length === 0 ? (
                   <div className="p-4 text-center text-sm text-muted-foreground">
-                    {isLive ? (
+                    {isWaiting ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <Clock className="h-4 w-4" />
+                        Scan queued, waiting for worker to start...
+                      </div>
+                    ) : isLive ? (
                       <div className="flex items-center justify-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin" />
                         Waiting for logs...

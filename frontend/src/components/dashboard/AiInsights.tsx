@@ -58,14 +58,14 @@ export function AiInsights({ tasks, repos }: AiInsightsProps) {
           items.push({
             id: `scan-${repo.id}`,
             icon: ScanSearch,
-            text: `Consider scanning ${repo.name} -- last scanned ${days} days ago`,
+            text: `Consider scanning ${repo.fullName} -- last scanned ${days} days ago`,
           });
         }
       } else if (repo.status !== "scanning") {
         items.push({
           id: `never-scanned-${repo.id}`,
           icon: ScanSearch,
-          text: `${repo.name} has never been scanned`,
+          text: `${repo.fullName} has never been scanned`,
         });
       }
     }

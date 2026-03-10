@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { FolderKanban, Plus } from "lucide-react";
 import { api } from "@/lib/api";
+import { RefreshButton } from "@/components/RefreshButton";
 import { Pagination, paginate } from "@/components/Pagination";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -62,7 +63,10 @@ export function Projects() {
     <div>
       {/* Header */}
       <div className="flex items-center justify-between gap-2 mb-6 flex-wrap">
-        <h2 className="text-2xl font-bold">Projects</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold">Projects</h2>
+          <RefreshButton queryKeys={["projects"]} />
+        </div>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4" />
           <span className="hidden sm:inline">New Project</span>

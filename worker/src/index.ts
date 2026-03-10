@@ -23,11 +23,13 @@ setBoss(boss);
 console.log("Worker started, listening for jobs...");
 
 // Ensure queues exist before registering workers
-await boss.createQueue(JOB_NAMES.REPO_SCAN);
-await boss.createQueue(JOB_NAMES.TASK_PLAN);
-await boss.createQueue(JOB_NAMES.TASK_EXECUTE);
-await boss.createQueue(JOB_NAMES.EMBED_SCREEN);
-await boss.createQueue(JOB_NAMES.EMBED_CONVERT);
+// Set 1 hour timeout for long-running AI jobs
+const HOUR_IN_SECONDS = 3600;
+await boss.createQueue(JOB_NAMES.REPO_SCAN, { expireInSeconds: HOUR_IN_SECONDS });
+await boss.createQueue(JOB_NAMES.TASK_PLAN, { expireInSeconds: HOUR_IN_SECONDS });
+await boss.createQueue(JOB_NAMES.TASK_EXECUTE, { expireInSeconds: HOUR_IN_SECONDS });
+await boss.createQueue(JOB_NAMES.EMBED_SCREEN, { expireInSeconds: HOUR_IN_SECONDS });
+await boss.createQueue(JOB_NAMES.EMBED_CONVERT, { expireInSeconds: HOUR_IN_SECONDS });
 
 await boss.work(JOB_NAMES.REPO_SCAN, { localConcurrency: 1 }, handleRepoScan as any);
 await boss.work(JOB_NAMES.TASK_PLAN, { localConcurrency: 1 }, handleTaskPlanning as any);

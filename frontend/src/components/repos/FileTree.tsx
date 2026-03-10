@@ -17,6 +17,7 @@ import { getFileIcon } from "@/lib/file-utils";
 
 interface FileTreeProps {
   repoId: string;
+  branch?: string | null;
   onSelectFile: (path: string) => void;
   selectedPath?: string | null;
   onBranchChange?: (branch: string | null) => void;
@@ -33,6 +34,7 @@ const ICON_MAP = {
 function DirectoryNode({
   entry,
   repoId,
+  branch,
   level,
   expandedDirs,
   toggleDir,
@@ -41,6 +43,7 @@ function DirectoryNode({
 }: {
   entry: any;
   repoId: string;
+  branch?: string | null;
   level: number;
   expandedDirs: Set<string>;
   toggleDir: (path: string) => void;
@@ -50,8 +53,8 @@ function DirectoryNode({
   const isExpanded = expandedDirs.has(entry.path);
 
   const { data: result, isLoading } = useQuery({
-    queryKey: ["repo-tree", repoId, entry.path],
-    queryFn: () => api.repos.tree(repoId, entry.path),
+    queryKey: ["repo-tree", repoId, entry.path, branch],
+    queryFn: () => api.repos.tree(repoId, entry.path, branch || undefined),
     enabled: isExpanded,
   });
 
@@ -89,6 +92,7 @@ function DirectoryNode({
                 key={child.path}
                 entry={child}
                 repoId={repoId}
+                branch={branch}
                 level={level + 1}
                 expandedDirs={expandedDirs}
                 toggleDir={toggleDir}
@@ -136,6 +140,7 @@ function FileNode({
 function TreeNode({
   entry,
   repoId,
+  branch,
   level,
   expandedDirs,
   toggleDir,
@@ -144,6 +149,7 @@ function TreeNode({
 }: {
   entry: any;
   repoId: string;
+  branch?: string | null;
   level: number;
   expandedDirs: Set<string>;
   toggleDir: (path: string) => void;
@@ -155,6 +161,7 @@ function TreeNode({
       <DirectoryNode
         entry={entry}
         repoId={repoId}
+        branch={branch}
         level={level}
         expandedDirs={expandedDirs}
         toggleDir={toggleDir}
@@ -174,20 +181,20 @@ function TreeNode({
   );
 }
 
-export function FileTree({ repoId, onSelectFile, selectedPath, onBranchChange }: FileTreeProps) {
+export function FileTree({ repoId, branch, onSelectFile, selectedPath, onBranchChange }: FileTreeProps) {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
 
   const { data: rootResult, isLoading, isError } = useQuery({
-    queryKey: ["repo-tree", repoId, ""],
-    queryFn: () => api.repos.tree(repoId),
+    queryKey: ["repo-tree", repoId, "", branch],
+    queryFn: () => api.repos.tree(repoId, undefined, branch || undefined),
   });
 
   const rootEntries = rootResult?.data;
-  const branch = rootResult?.branch ?? null;
+  const detectedBranch = rootResult?.branch ?? null;
 
   useEffect(() => {
-    onBranchChange?.(branch);
-  }, [branch, onBranchChange]);
+    onBranchChange?.(detectedBranch);
+  }, [detectedBranch, onBranchChange]);
 
   const toggleDir = (path: string) => {
     setExpandedDirs((prev) => {
@@ -237,6 +244,7 @@ export function FileTree({ repoId, onSelectFile, selectedPath, onBranchChange }:
             key={entry.path}
             entry={entry}
             repoId={repoId}
+            branch={branch}
             level={0}
             expandedDirs={expandedDirs}
             toggleDir={toggleDir}

@@ -13,6 +13,7 @@ import { TaskChart } from "@/components/dashboard/TaskChart";
 import { TaskTypeChart } from "@/components/dashboard/TaskTypeChart";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { AiInsights } from "@/components/dashboard/AiInsights";
+import { RefreshButton } from "@/components/RefreshButton";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -90,7 +91,10 @@ export function Dashboard() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Dashboard</h2>
+      <div className="flex items-center gap-3">
+        <h2 className="text-lg font-semibold">Dashboard</h2>
+        <RefreshButton queryKeys={["repos", "tasks"]} />
+      </div>
 
       {/* Metrics row */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

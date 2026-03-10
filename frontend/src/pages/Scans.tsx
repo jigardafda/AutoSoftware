@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
+import { toast } from "sonner";
 import { Pagination, paginate } from "@/components/Pagination";
 import {
   CheckCircle2,
@@ -13,6 +14,12 @@ import {
   Loader2,
   Filter,
   X,
+  Ban,
+  Clock,
+  User,
+  Timer,
+  GitBranch,
+  SkipForward,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -36,6 +43,7 @@ import { useSort, type SortConfig } from "@/hooks/useSort";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
+import { RefreshButton } from "@/components/RefreshButton";
 
 function timeAgo(date: string) {
   const seconds = Math.floor(
@@ -50,6 +58,26 @@ function timeAgo(date: string) {
   if (days < 30) return `${days}d ago`;
   const months = Math.floor(days / 30);
   return `${months}mo ago`;
+}
+
+function formatDuration(startedAt: string | null, completedAt: string | null): string {
+  if (!startedAt || !completedAt) return "--";
+  const ms = new Date(completedAt).getTime() - new Date(startedAt).getTime();
+  if (ms < 0) return "--";
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSec = seconds % 60;
+  if (minutes < 60) return `${minutes}m ${remainingSec}s`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMin = minutes % 60;
+  return `${hours}h ${remainingMin}m`;
+}
+
+function formatCost(cost: number): string {
+  if (cost === 0) return "--";
+  if (cost < 0.01) return `$${cost.toFixed(4)}`;
+  return `$${cost.toFixed(2)}`;
 }
 
 function ProviderIcon({ provider }: { provider: string }) {
@@ -122,6 +150,7 @@ const SCAN_SORT_CONFIG: SortConfig = {
 
 export function Scans() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [repoFilter, setRepoFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [tasksFilter, setTasksFilter] = useState<string>("all");
@@ -131,7 +160,17 @@ export function Scans() {
     queryKey: ["scans"],
     queryFn: api.scans.list,
     refetchInterval: (query) =>
-      query.state.data?.some((s: any) => s.status === "in_progress") ? 3000 : false,
+      query.state.data?.some((s: any) => s.status === "in_progress" || s.status === "queued") ? 3000 : false,
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (scanId: string) => api.scans.cancel(scanId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["scans"] });
+      queryClient.invalidateQueries({ queryKey: ["repos"] });
+      toast.success("Scan cancelled");
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   // Derive unique repos for filter dropdown
@@ -217,6 +256,7 @@ export function Scans() {
         <Badge variant="secondary" className="text-xs">
           {scans.length}
         </Badge>
+        <RefreshButton queryKeys={["scans", "repos"]} />
       </div>
 
       <ActiveScans />
@@ -245,9 +285,12 @@ export function Scans() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="queued">Queued</SelectItem>
             <SelectItem value="in_progress">In Progress</SelectItem>
             <SelectItem value="completed">Completed</SelectItem>
             <SelectItem value="failed">Failed</SelectItem>
+            <SelectItem value="cancelled">Cancelled</SelectItem>
+            <SelectItem value="skipped">Skipped</SelectItem>
           </SelectContent>
         </Select>
 
@@ -291,11 +334,14 @@ export function Scans() {
             <TableHeader>
               <TableRow>
                 <SortableHeader label="Repository" sortKey="repository.fullName" sort={sort} onSort={onSort} />
+                <TableHead className="w-28">Branch</TableHead>
                 <SortableHeader label="Scanned At" sortKey="scannedAt" sort={sort} onSort={onSort} />
                 <SortableHeader label="Status" sortKey="status" sort={sort} onSort={onSort} />
-                <SortableHeader label="Tasks Created" sortKey="tasksCreated" sort={sort} onSort={onSort} />
-                <TableHead>Summary</TableHead>
-                <TableHead className="w-8" />
+                <TableHead className="w-20">Duration</TableHead>
+                <SortableHeader label="Tasks" sortKey="tasksCreated" sort={sort} onSort={onSort} />
+                <TableHead className="w-20">Cost</TableHead>
+                <TableHead className="hidden lg:table-cell">Summary</TableHead>
+                <TableHead className="w-20">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -313,48 +359,114 @@ export function Scans() {
                         </span>
                       </div>
                     </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                        <GitBranch className="h-3 w-3 flex-shrink-0" />
+                        <span className="truncate max-w-[100px]" title={scan.branch || scan.repository?.defaultBranch || "main"}>
+                          {scan.branch || scan.repository?.defaultBranch || "main"}
+                        </span>
+                      </div>
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {timeAgo(scan.scannedAt)}
                     </TableCell>
                     <TableCell>
-                      {scan.status === "in_progress" ? (
-                        <Badge
-                          variant="secondary"
-                          className="bg-blue-500/10 text-blue-500 border-blue-500/20 animate-pulse"
-                        >
-                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                          In Progress
-                        </Badge>
-                      ) : scan.status === "completed" ? (
-                        <Badge
-                          variant="secondary"
-                          className="bg-green-500/10 text-green-500 border-green-500/20"
-                        >
-                          <CheckCircle2 className="h-3 w-3 mr-1" />
-                          Completed
-                        </Badge>
-                      ) : (
-                        <Badge
-                          variant="secondary"
-                          className="bg-red-500/10 text-red-500 border-red-500/20"
-                        >
-                          <XCircle className="h-3 w-3 mr-1" />
-                          Failed
-                        </Badge>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {scan.status === "queued" ? (
+                          <Badge
+                            variant="secondary"
+                            className="bg-amber-500/10 text-amber-500 border-amber-500/20"
+                          >
+                            <Clock className="h-3 w-3 mr-1" />
+                            Queued
+                          </Badge>
+                        ) : scan.status === "in_progress" ? (
+                          <Badge
+                            variant="secondary"
+                            className="bg-blue-500/10 text-blue-500 border-blue-500/20 animate-pulse"
+                          >
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                            In Progress
+                          </Badge>
+                        ) : scan.status === "completed" ? (
+                          <Badge
+                            variant="secondary"
+                            className="bg-green-500/10 text-green-500 border-green-500/20"
+                          >
+                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                            Completed
+                          </Badge>
+                        ) : scan.status === "cancelled" ? (
+                          <Badge
+                            variant="secondary"
+                            className="bg-gray-500/10 text-gray-500 border-gray-500/20"
+                          >
+                            <Ban className="h-3 w-3 mr-1" />
+                            Cancelled
+                          </Badge>
+                        ) : scan.status === "skipped" ? (
+                          <Badge
+                            variant="secondary"
+                            className="bg-purple-500/10 text-purple-500 border-purple-500/20"
+                          >
+                            <SkipForward className="h-3 w-3 mr-1" />
+                            Skipped
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="secondary"
+                            className="bg-red-500/10 text-red-500 border-red-500/20"
+                          >
+                            <XCircle className="h-3 w-3 mr-1" />
+                            Failed
+                          </Badge>
+                        )}
+                        {scan.source && (
+                          <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                            {scan.source === "manual" ? (
+                              <><User className="h-2.5 w-2.5" /> Manual</>
+                            ) : (
+                              <><Timer className="h-2.5 w-2.5" /> Scheduled</>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground tabular-nums">
+                      {formatDuration(scan.startedAt, scan.completedAt)}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {scan.tasksCreated ?? 0}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
+                    <TableCell className="text-sm text-muted-foreground tabular-nums">
+                      {formatCost(scan.estimatedCostUsd ?? 0)}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate hidden lg:table-cell">
                       {scan.summary
                         ? scan.summary.length > 100
                           ? `${scan.summary.slice(0, 100)}...`
                           : scan.summary
                         : "--"}
                     </TableCell>
-                    <TableCell>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      {scan.status === "in_progress" || scan.status === "queued" ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                          onClick={() => cancelMutation.mutate(scan.id)}
+                          disabled={cancelMutation.isPending}
+                        >
+                          {cancelMutation.isPending ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Ban className="h-3 w-3" />
+                          )}
+                          <span className="ml-1">{scan.status === "queued" ? "Cancel" : "Stop"}</span>
+                        </Button>
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      )}
                     </TableCell>
                   </TableRow>
               ))}
