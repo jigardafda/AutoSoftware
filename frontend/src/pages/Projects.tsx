@@ -1,7 +1,6 @@
 import { useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
 import { FolderKanban, Plus } from "lucide-react";
 import { api } from "@/lib/api";
 import { Pagination, paginate } from "@/components/Pagination";
@@ -32,7 +31,6 @@ function relativeTime(dateStr: string | null): string {
 }
 
 export function Projects() {
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [createOpen, setCreateOpen] = useState(false);
   const [page, setPage] = useState(0);

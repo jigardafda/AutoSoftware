@@ -80,7 +80,7 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
 
       const updated = await prisma.repository.update({
         where: { id: repo.id },
-        data: request.body,
+        data: request.body as any,
       });
 
       if (request.body.scanInterval !== undefined || request.body.isActive !== undefined) {

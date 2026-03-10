@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Trash2, GripVertical, Check, Loader2 } from "lucide-react";
+import { Trash2, Check, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,7 +28,7 @@ export function DocumentEditor({ projectId, document, onMoveUp, onMoveDown, canM
   const [title, setTitle] = useState(document.title);
   const [content, setContent] = useState(document.content);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">("saved");
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const updateMutation = useMutation({
     mutationFn: (body: { title?: string; content?: string }) =>

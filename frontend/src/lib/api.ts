@@ -68,6 +68,8 @@ export const api = {
     update: (id: string, body: any) =>
       request<any>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     delete: (id: string) => request<any>(`/tasks/${id}`, { method: "DELETE" }),
+    submitAnswers: (id: string, body: { answers: Record<string, any> }) =>
+      request<any>(`/tasks/${id}/answers`, { method: "POST", body: JSON.stringify(body) }),
   },
   projects: {
     list: () => request<any[]>("/projects"),

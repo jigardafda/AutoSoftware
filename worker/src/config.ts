@@ -11,5 +11,6 @@ export const config = {
   workDir: process.env.WORK_DIR || "/tmp/autosoftware-workspaces",
   defaultScanBudget: parseFloat(process.env.DEFAULT_SCAN_BUDGET || "2.0"),
   defaultTaskBudget: parseFloat(process.env.DEFAULT_TASK_BUDGET || "10.0"),
+  defaultPlanBudget: parseFloat(process.env.DEFAULT_PLAN_BUDGET || "1.0"),
   apiKeyEncryptionSecret: process.env.API_KEY_ENCRYPTION_SECRET || "",
 };

@@ -17,6 +17,9 @@ interface TaskFiltersProps {
 const STATUS_OPTIONS = [
   { value: "all", label: "All Statuses" },
   { value: "pending", label: "Pending" },
+  { value: "planning", label: "Planning" },
+  { value: "awaiting_input", label: "Awaiting Input" },
+  { value: "planned", label: "Planned" },
   { value: "in_progress", label: "In Progress" },
   { value: "completed", label: "Completed" },
   { value: "failed", label: "Failed" },

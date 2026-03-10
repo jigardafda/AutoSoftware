@@ -13,6 +13,7 @@ export const schedulerService = {
 
     // Ensure queues exist
     await boss.createQueue(JOB_NAMES.REPO_SCAN);
+    await boss.createQueue(JOB_NAMES.TASK_PLAN);
     await boss.createQueue(JOB_NAMES.TASK_EXECUTE);
 
     const activeRepos = await prisma.repository.findMany({
@@ -31,7 +32,7 @@ export const schedulerService = {
     await boss.send(JOB_NAMES.REPO_SCAN, { repoId }, {
       retryLimit: 3,
       retryBackoff: true,
-      expireInMinutes: 30,
+      expireInSeconds: 30 * 60,
       singletonKey: `scan-${repoId}`,
       startAfter: intervalMinutes * 60,
     });
@@ -45,7 +46,15 @@ export const schedulerService = {
     await boss.send(JOB_NAMES.REPO_SCAN, { repoId, projectId }, {
       retryLimit: 3,
       retryBackoff: true,
-      expireInMinutes: 30,
+      expireInSeconds: 30 * 60,
+    });
+  },
+
+  async queueTaskPlanning(taskId: string) {
+    await boss.send(JOB_NAMES.TASK_PLAN, { taskId }, {
+      retryLimit: 3,
+      retryBackoff: true,
+      expireInSeconds: 15 * 60,
     });
   },
 
@@ -53,7 +62,7 @@ export const schedulerService = {
     await boss.send(JOB_NAMES.TASK_EXECUTE, { taskId }, {
       retryLimit: 3,
       retryBackoff: true,
-      expireInMinutes: 60,
+      expireInSeconds: 60 * 60,
     });
   },
 

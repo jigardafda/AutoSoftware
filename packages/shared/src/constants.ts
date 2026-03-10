@@ -1,11 +1,13 @@
 export const JOB_NAMES = {
   REPO_SCAN: "repo-scan",
+  TASK_PLAN: "task-plan",
   TASK_EXECUTE: "task-execute",
 } as const;
 
 export const DEFAULT_SCAN_INTERVAL_MINUTES = 60;
 export const DEFAULT_SCAN_BUDGET_USD = 2.0;
 export const DEFAULT_TASK_BUDGET_USD = 10.0;
+export const DEFAULT_PLAN_BUDGET_USD = 1.0;
 export const MAX_RETRIES = 3;
 
 // Pricing per million tokens (USD)

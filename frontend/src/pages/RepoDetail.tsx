@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
@@ -16,11 +16,7 @@ import {
   Clock,
   Loader2,
   Ban,
-  DollarSign,
-  Activity,
-  BarChart3,
   ExternalLink,
-  Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FileBrowser } from "@/components/repos/FileBrowser";
@@ -31,7 +27,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -350,9 +345,9 @@ export function RepoDetail() {
                           cy="50%"
                           outerRadius={70}
                           stroke="var(--background)"
-                          label={({ x, y, type, count, textAnchor }) => (
+                          label={({ x, y, textAnchor, ...rest }: any) => (
                             <text x={x} y={y} textAnchor={textAnchor} fill="var(--foreground)" fontSize={12}>
-                              {`${type} (${count})`}
+                              {`${rest.type} (${rest.count})`}
                             </text>
                           )}
                           labelLine={false}

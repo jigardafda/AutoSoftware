@@ -4,26 +4,8 @@ import { simpleGit } from "simple-git";
 import { cloneOrPullRepo, createWorktree, cleanupWorktree } from "../services/repo-manager.js";
 import { createPullRequest } from "./pr-creator.js";
 import { config } from "../config.js";
-import { decrypt } from "@autosoftware/shared";
 import { getProjectContext } from "../services/project-context.js";
-
-async function resolveApiKey(userId: string): Promise<{ key: string; apiKeyId: string | null }> {
-  if (config.apiKeyEncryptionSecret) {
-    const dbKey = await prisma.apiKey.findFirst({
-      where: { userId, isActive: true },
-      orderBy: { priority: "asc" },
-    });
-    if (dbKey) {
-      try {
-        const plainKey = decrypt(dbKey.encryptedKey, config.apiKeyEncryptionSecret);
-        return { key: plainKey, apiKeyId: dbKey.id };
-      } catch {
-        // Decryption failed, fall through
-      }
-    }
-  }
-  return { key: config.anthropicApiKey, apiKeyId: null };
-}
+import { resolveApiKey } from "../services/api-key-resolver.js";
 
 export async function handleTaskExecution(jobs: { data: { taskId: string } }[]) {
   const job = jobs[0];
@@ -96,12 +78,14 @@ export async function handleTaskExecution(jobs: { data: { taskId: string } }[]) 
     let resultText = "";
     let sessionId: string | undefined;
 
+    const implementationInstructions = task.enhancedPlan || task.description;
+
     for await (const message of query({
       prompt: `${projectContext ? projectContext + "\n---\n\n" : ""}You are an expert software engineer. Implement the following task:
 
 ## Task: ${task.title}
 
-${task.description}
+${implementationInstructions}
 
 ## Instructions:
 1. Read relevant files to understand the codebase

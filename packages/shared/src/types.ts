@@ -2,7 +2,7 @@ export type OAuthProvider = "github" | "gitlab" | "bitbucket";
 export type RepoStatus = "idle" | "scanning" | "error";
 export type TaskType = "improvement" | "bugfix" | "feature" | "refactor" | "security";
 export type TaskPriority = "low" | "medium" | "high" | "critical";
-export type TaskStatus = "pending" | "in_progress" | "completed" | "failed" | "cancelled";
+export type TaskStatus = "planning" | "awaiting_input" | "planned" | "pending" | "in_progress" | "completed" | "failed" | "cancelled";
 export type TaskSource = "auto_scan" | "manual";
 export type ScanStatus = "completed" | "failed";
 
@@ -35,11 +35,31 @@ export interface TaskDTO {
   priority: TaskPriority;
   status: TaskStatus;
   source: TaskSource;
+  planningRound: number;
+  enhancedPlan: string | null;
+  affectedFiles: string[];
   pullRequestUrl: string | null;
   pullRequestStatus: string | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+  planningQuestions?: PlanningQuestionDTO[];
+}
+
+export interface PlanningQuestionDTO {
+  id: string;
+  questionKey: string;
+  round: number;
+  label: string;
+  type: "select" | "multi_select" | "confirm";
+  options: { value: string; label: string }[];
+  answer: string | string[] | boolean | null;
+  required: boolean;
+  sortOrder: number;
+}
+
+export interface SubmitAnswersInput {
+  answers: Record<string, string | string[] | boolean>;
 }
 
 export interface ScanResultDTO {

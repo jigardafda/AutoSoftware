@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
@@ -237,7 +237,6 @@ export function ProjectDetail() {
   const pagedTasks = paginate(projectTasks, tasksPage);
 
   const totalTasks = stats?.totalTasks ?? 0;
-  const totalScans = stats?.totalScans ?? 0;
   const totalCost = stats?.usage?.totalCost ?? 0;
 
   const handleSwap = (docs: any[], idx: number, dir: "up" | "down") => {
@@ -389,9 +388,9 @@ export function ProjectDetail() {
                           cy="50%"
                           outerRadius={70}
                           stroke="var(--background)"
-                          label={({ x, y, type, count, textAnchor }) => (
+                          label={({ x, y, textAnchor, ...rest }: any) => (
                             <text x={x} y={y} textAnchor={textAnchor} fill="var(--foreground)" fontSize={12}>
-                              {`${type} (${count})`}
+                              {`${rest.type} (${rest.count})`}
                             </text>
                           )}
                           labelLine={false}

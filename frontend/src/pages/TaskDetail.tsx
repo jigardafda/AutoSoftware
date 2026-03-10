@@ -12,8 +12,12 @@ import {
   Loader2,
   GitCommit,
   Trash2,
+  MessageSquare,
+  ClipboardList,
+  FileCode2,
 } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
+import { PlanningQuestionsCard } from "@/components/tasks/PlanningQuestionsCard";
 import { LinkedText } from "@/components/LinkedText";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -81,6 +85,21 @@ const statusConfig: Record<
     label: "Cancelled",
     className: "bg-muted text-muted-foreground",
     icon: <XCircle className="h-3 w-3" />,
+  },
+  planning: {
+    label: "Planning",
+    className: "bg-amber-500/15 text-amber-500 border-amber-500/20 animate-pulse",
+    icon: <Loader2 className="h-3 w-3 animate-spin" />,
+  },
+  awaiting_input: {
+    label: "Awaiting Input",
+    className: "bg-amber-500/15 text-amber-600 border-amber-500/20",
+    icon: <MessageSquare className="h-3 w-3" />,
+  },
+  planned: {
+    label: "Planned",
+    className: "bg-cyan-500/15 text-cyan-500 border-cyan-500/20",
+    icon: <CheckCircle2 className="h-3 w-3" />,
   },
 };
 
@@ -166,8 +185,10 @@ export function TaskDetail() {
     queryKey: ["task", id],
     queryFn: () => api.tasks.get(id!),
     enabled: !!id,
-    refetchInterval: (query) =>
-      query.state.data?.status === "in_progress" ? 3000 : false,
+    refetchInterval: (query) => {
+      const s = query.state.data?.status;
+      return (s === "in_progress" || s === "planning") ? 3000 : false;
+    },
   });
 
   if (isLoading) {
@@ -288,6 +309,28 @@ export function TaskDetail() {
 
       <Separator />
 
+      {/* Planning indicator */}
+      {task.status === "planning" && (
+        <Card className="border-amber-500/30 bg-amber-500/5">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-3 text-sm text-amber-500">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              AI is analyzing your task and the repository...
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Planning questions form */}
+      {task.status === "awaiting_input" && task.planningQuestions && (
+        <PlanningQuestionsCard
+          taskId={task.id}
+          questions={task.planningQuestions.filter((q: any) => q.round === task.planningRound)}
+          currentRound={task.planningRound}
+          onSubmitted={() => queryClient.invalidateQueries({ queryKey: ["task", id] })}
+        />
+      )}
+
       {/* Tabs */}
       <Tabs defaultValue="overview" className="space-y-4">
         <div className="overflow-x-auto">
@@ -316,6 +359,50 @@ export function TaskDetail() {
               </p>
             </CardContent>
           </Card>
+
+          {/* Enhanced Plan Card */}
+          {task.enhancedPlan && (
+            <Card className="border-cyan-500/30 bg-cyan-500/5">
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <ClipboardList className="h-4 w-4 text-cyan-500" />
+                  <span className="text-cyan-500">Implementation Plan</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                  <LinkedText text={task.enhancedPlan} repoId={task.repositoryId} />
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Affected Files Card */}
+          {task.affectedFiles && task.affectedFiles.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <FileCode2 className="h-4 w-4 text-muted-foreground" />
+                  Affected Files
+                  <Badge variant="outline" className="ml-auto text-[10px] px-1.5 py-0">
+                    {task.affectedFiles.length}
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-1.5">
+                  {task.affectedFiles.map((file: string) => (
+                    <code
+                      key={file}
+                      className="text-xs bg-muted px-2 py-1 rounded font-mono text-muted-foreground"
+                    >
+                      {file}
+                    </code>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* AI Summary Card */}
           {metadata.resultSummary && (

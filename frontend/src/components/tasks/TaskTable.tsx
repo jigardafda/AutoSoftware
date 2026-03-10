@@ -6,6 +6,7 @@ import {
   Ban,
   ExternalLink,
   Minus,
+  MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -51,6 +52,9 @@ const STATUS_CONFIG: Record<
   completed: { icon: CheckCircle2, className: "text-green-500" },
   failed: { icon: XCircle, className: "text-red-500" },
   cancelled: { icon: Ban, className: "text-muted-foreground" },
+  planning: { icon: Loader2, className: "text-amber-500 animate-spin" },
+  awaiting_input: { icon: MessageSquare, className: "text-amber-600" },
+  planned: { icon: CheckCircle2, className: "text-cyan-500" },
 };
 
 const TYPE_COLOR: Record<string, string> = {

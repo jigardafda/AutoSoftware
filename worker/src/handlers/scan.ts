@@ -3,32 +3,15 @@ import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "../db.js";
 import { cloneOrPullRepo } from "../services/repo-manager.js";
 import { config } from "../config.js";
-import { decrypt, estimateCost } from "@autosoftware/shared";
+import { estimateCost } from "@autosoftware/shared";
 import { getProjectContext } from "../services/project-context.js";
+import { resolveApiKey } from "../services/api-key-resolver.js";
 
 interface ScanTask {
   title: string;
   description: string;
   type: "improvement" | "bugfix" | "feature" | "refactor" | "security";
   priority: "low" | "medium" | "high" | "critical";
-}
-
-async function resolveApiKey(userId: string): Promise<{ key: string; apiKeyId: string | null }> {
-  if (config.apiKeyEncryptionSecret) {
-    const dbKey = await prisma.apiKey.findFirst({
-      where: { userId, isActive: true },
-      orderBy: { priority: "asc" },
-    });
-    if (dbKey) {
-      try {
-        const plainKey = decrypt(dbKey.encryptedKey, config.apiKeyEncryptionSecret);
-        return { key: plainKey, apiKeyId: dbKey.id };
-      } catch {
-        // Decryption failed, fall through
-      }
-    }
-  }
-  return { key: config.anthropicApiKey, apiKeyId: null };
 }
 
 export async function handleRepoScan(jobs: { data: { repoId: string; projectId?: string } }[]) {
@@ -242,7 +225,7 @@ If all new tasks are duplicates, return []. If none are duplicates, return all i
         status: "completed",
         summary: `Found ${tasksCreated} potential improvements`,
         tasksCreated,
-        analysisData: { rawAnalysis: analysisText, tasks },
+        analysisData: { rawAnalysis: analysisText, tasks } as any,
       },
     });
 

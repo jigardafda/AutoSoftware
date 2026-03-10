@@ -20,6 +20,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
 
 interface CreateTaskSheetProps {
   open: boolean;
@@ -32,6 +33,7 @@ const INITIAL_FORM = {
   description: "",
   type: "improvement" as string,
   priority: "medium" as string,
+  skipPlanning: false,
 };
 
 export function CreateTaskSheet({ open, onOpenChange }: CreateTaskSheetProps) {
@@ -157,6 +159,18 @@ export function CreateTaskSheet({ open, onOpenChange }: CreateTaskSheetProps) {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="skip-planning" className="text-sm">Skip planning</Label>
+              <p className="text-xs text-muted-foreground">Execute immediately without AI planning</p>
+            </div>
+            <Switch
+              id="skip-planning"
+              checked={form.skipPlanning}
+              onCheckedChange={(checked) => setForm({ ...form, skipPlanning: checked as boolean })}
+            />
           </div>
 
           <Button

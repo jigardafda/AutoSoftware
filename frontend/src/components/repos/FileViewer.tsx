@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { CodeBlock } from "@/components/repos/CodeBlock";
 import { getLanguageFromFilename, formatFileSize, isImageFile, isPdfFile } from "@/lib/file-utils";
-import { FileCode, Copy, AlertTriangle, Image } from "lucide-react";
+import { FileCode, Copy, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
