@@ -50,6 +50,8 @@ import { ProviderIcon } from "@/components/integrations/ProviderIcon";
 import { LinkExternalProjectDialog } from "@/components/integrations/LinkExternalProjectDialog";
 import { ImportItemsSheet } from "@/components/integrations/ImportItemsSheet";
 import { ConfirmDeleteDialog as IntegrationDeleteDialog } from "@/components/ConfirmDeleteDialog";
+import { EmbedConfigTab } from "@/components/projects/EmbedConfigTab";
+import { EmbedSubmissionsTable } from "@/components/projects/EmbedSubmissionsTable";
 import {
   AreaChart,
   Area,
@@ -149,7 +151,7 @@ export function ProjectDetail() {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [importLink, setImportLink] = useState<any>(null);
 
-  const VALID_TABS = ["overview", "repos", "documents", "tasks", "integrations", "usage"] as const;
+  const VALID_TABS = ["overview", "repos", "documents", "tasks", "integrations", "usage", "embed"] as const;
   const tab = useMemo(() => {
     const t = searchParams.get("tab");
     return VALID_TABS.includes(t as any) ? t! : "overview";
@@ -362,6 +364,7 @@ export function ProjectDetail() {
           <TabsTrigger value="tasks">Tasks ({totalTasks})</TabsTrigger>
           <TabsTrigger value="integrations">Integrations ({integrationLinks.length})</TabsTrigger>
           <TabsTrigger value="usage">Usage</TabsTrigger>
+          <TabsTrigger value="embed">Embed</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -726,6 +729,15 @@ export function ProjectDetail() {
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        {/* Embed Tab */}
+        <TabsContent value="embed" className="space-y-6">
+          <EmbedConfigTab projectId={id!} />
+          <EmbedSubmissionsTable
+            projectId={id!}
+            repositories={project.repos?.map((r: any) => ({ id: r.id, fullName: r.fullName })) || []}
+          />
         </TabsContent>
       </Tabs>
 
