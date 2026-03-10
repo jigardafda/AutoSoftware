@@ -199,6 +199,14 @@ export function RepoDetail() {
     queryKey: ["repo-stats", id],
     queryFn: () => api.repos.stats(id!),
     enabled: !!id,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return false;
+      // Auto-refresh when repo is scanning or there are queued/in_progress scans
+      const isActive = data.repo?.status === "scanning" ||
+        data.scans?.some((s: any) => s.status === "in_progress" || s.status === "queued");
+      return isActive ? 3000 : false;
+    },
   });
 
   // Fetch branches for scan dropdown
@@ -213,6 +221,7 @@ export function RepoDetail() {
     mutationFn: (branch?: string) => api.repos.scan(id!, undefined, branch),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["repo-stats", id] });
+      queryClient.invalidateQueries({ queryKey: ["scans"] });
       toast.success("Scan triggered");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -270,6 +279,7 @@ export function RepoDetail() {
     mutationFn: (scanId: string) => api.scans.cancel(scanId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["repo-stats", id] });
+      queryClient.invalidateQueries({ queryKey: ["scans"] });
       toast.success("Scan cancelled");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -607,12 +617,18 @@ export function RepoDetail() {
                 <div className="space-y-2">
                   {scans.slice(0, 5).map((scan: any) => (
                     <div key={scan.id} className="flex items-center gap-3 text-sm">
-                      {scan.status === "completed" ? (
+                      {scan.status === "queued" ? (
+                        <Clock className="h-4 w-4 text-amber-500 shrink-0" />
+                      ) : scan.status === "in_progress" ? (
+                        <Loader2 className="h-4 w-4 text-blue-500 shrink-0 animate-spin" />
+                      ) : scan.status === "completed" ? (
                         <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                      ) : scan.status === "cancelled" ? (
+                        <Ban className="h-4 w-4 text-gray-500 shrink-0" />
                       ) : (
                         <XCircle className="h-4 w-4 text-red-500 shrink-0" />
                       )}
-                      <span className="truncate flex-1">{scan.summary || "No summary"}</span>
+                      <span className="truncate flex-1">{scan.summary || (scan.status === "queued" ? "Waiting to start" : scan.status === "in_progress" ? "Scanning..." : "No summary")}</span>
                       <span className="text-xs text-muted-foreground shrink-0">{relativeTime(scan.scannedAt)}</span>
                       <Badge variant="secondary" className="text-[10px] shrink-0">{scan.tasksCreated} tasks</Badge>
                     </div>
@@ -848,9 +864,12 @@ export function RepoDetail() {
                     <TableRow>
                       <TableHead className="w-8"></TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead className="w-28">Branch</TableHead>
                       <TableHead>Scanned At</TableHead>
-                      <TableHead>Tasks Created</TableHead>
-                      <TableHead>Summary / Error</TableHead>
+                      <TableHead>Duration</TableHead>
+                      <TableHead>Tasks</TableHead>
+                      <TableHead>Cost</TableHead>
+                      <TableHead className="hidden lg:table-cell">Summary / Error</TableHead>
                       <TableHead className="w-20">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -869,7 +888,12 @@ export function RepoDetail() {
                             )}
                           </TableCell>
                           <TableCell>
-                            {scan.status === "completed" ? (
+                            {scan.status === "queued" ? (
+                              <Badge variant="secondary" className="bg-amber-500/10 text-amber-500 border-amber-500/20">
+                                <Clock className="h-3 w-3 mr-1" />
+                                Queued
+                              </Badge>
+                            ) : scan.status === "completed" ? (
                               <Badge variant="secondary" className="bg-green-500/10 text-green-500 border-green-500/20">
                                 <CheckCircle2 className="h-3 w-3 mr-1" />
                                 Completed
@@ -880,9 +904,14 @@ export function RepoDetail() {
                                 In Progress
                               </Badge>
                             ) : scan.status === "cancelled" ? (
-                              <Badge variant="secondary" className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20">
+                              <Badge variant="secondary" className="bg-gray-500/10 text-gray-500 border-gray-500/20">
                                 <Ban className="h-3 w-3 mr-1" />
                                 Cancelled
+                              </Badge>
+                            ) : scan.status === "skipped" ? (
+                              <Badge variant="secondary" className="bg-purple-500/10 text-purple-500 border-purple-500/20">
+                                <Clock className="h-3 w-3 mr-1" />
+                                Skipped
                               </Badge>
                             ) : (
                               <Badge variant="secondary" className="bg-red-500/10 text-red-500 border-red-500/20">
@@ -891,9 +920,21 @@ export function RepoDetail() {
                               </Badge>
                             )}
                           </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                              <GitBranch className="h-3 w-3 flex-shrink-0" />
+                              <span className="truncate max-w-[100px]" title={scan.branch || repo?.defaultBranch || "main"}>
+                                {scan.branch || repo?.defaultBranch || "main"}
+                              </span>
+                            </div>
+                          </TableCell>
                           <TableCell className="text-sm text-muted-foreground">{relativeTime(scan.scannedAt)}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground tabular-nums">{formatDuration(scan.startedAt, scan.completedAt)}</TableCell>
                           <TableCell className="text-sm">{scan.tasksCreated ?? 0}</TableCell>
-                          <TableCell className="text-sm max-w-[400px]">
+                          <TableCell className="text-sm text-muted-foreground tabular-nums">
+                            {scan.estimatedCostUsd > 0 ? formatCost(scan.estimatedCostUsd) : "--"}
+                          </TableCell>
+                          <TableCell className="text-sm max-w-[300px] hidden lg:table-cell">
                             {scan.status === "failed" ? (
                               <span className="text-red-500 whitespace-pre-wrap break-words">
                                 {scan.summary || "Unknown error"}
@@ -902,6 +943,10 @@ export function RepoDetail() {
                               <span className="text-yellow-500">
                                 {scan.summary || "Scan cancelled by user"}
                               </span>
+                            ) : scan.status === "skipped" ? (
+                              <span className="text-purple-500">
+                                {scan.summary || "Scan skipped (another scan active)"}
+                              </span>
                             ) : (
                               <span className="text-muted-foreground truncate block">
                                 {scan.summary || "--"}
@@ -909,7 +954,7 @@ export function RepoDetail() {
                             )}
                           </TableCell>
                           <TableCell onClick={(e) => e.stopPropagation()}>
-                            {scan.status === "in_progress" && (
+                            {(scan.status === "in_progress" || scan.status === "queued") && (
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -922,14 +967,14 @@ export function RepoDetail() {
                                 ) : (
                                   <Ban className="h-3 w-3" />
                                 )}
-                                <span className="ml-1">Stop</span>
+                                <span className="ml-1">{scan.status === "queued" ? "Cancel" : "Stop"}</span>
                               </Button>
                             )}
                           </TableCell>
                         </TableRow>
                         {expandedScan === scan.id && (
                           <TableRow key={`${scan.id}-logs`}>
-                            <TableCell colSpan={6} className="bg-muted/30 p-0">
+                            <TableCell colSpan={9} className="bg-muted/30 p-0">
                               <div className="p-4 space-y-2 max-h-64 overflow-y-auto">
                                 <p className="text-xs font-medium text-muted-foreground mb-2">Scan Logs</p>
                                 {!scanLogs[scan.id] ? (

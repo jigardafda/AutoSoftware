@@ -1,7 +1,7 @@
 import { PgBoss } from "pg-boss";
 import { config } from "../config.js";
 import { prisma } from "../db.js";
-import { JOB_NAMES } from "@autosoftware/shared";
+import { JOB_NAMES, ScanSource } from "@autosoftware/shared";
 
 let boss: PgBoss;
 
@@ -31,10 +31,12 @@ export const schedulerService = {
   },
 
   async scheduleRepoScan(repoId: string, intervalMinutes: number) {
-    await boss.send(JOB_NAMES.REPO_SCAN, { repoId }, {
+    // For scheduled/periodic scans, don't create record until job actually runs
+    // The worker will create the record when processing starts
+    await boss.send(JOB_NAMES.REPO_SCAN, { repoId, source: "scheduled" }, {
       retryLimit: 3,
       retryBackoff: true,
-      expireInSeconds: 30 * 60,
+      expireInSeconds: 60 * 60, // 1 hour
       singletonKey: `scan-${repoId}`,
       startAfter: intervalMinutes * 60,
     });
@@ -44,19 +46,41 @@ export const schedulerService = {
     // Jobs with singletonKey will naturally not be re-queued if repo is deactivated
   },
 
-  async triggerScan(repoId: string, projectId?: string, branch?: string) {
-    await boss.send(JOB_NAMES.REPO_SCAN, { repoId, projectId, branch }, {
+  async triggerScan(repoId: string, projectId?: string, branch?: string, source: ScanSource = "manual") {
+    // Resolve the target branch - if not specified, use repo's default
+    let targetBranch = branch;
+    if (!targetBranch) {
+      const repo = await prisma.repository.findUnique({
+        where: { id: repoId },
+        select: { defaultBranch: true },
+      });
+      targetBranch = repo?.defaultBranch || "main";
+    }
+
+    // Create scan record immediately with queued status and branch
+    const scanResult = await prisma.scanResult.create({
+      data: {
+        repositoryId: repoId,
+        branch: targetBranch,
+        status: "queued",
+        source,
+      },
+    });
+
+    await boss.send(JOB_NAMES.REPO_SCAN, { repoId, projectId, branch: targetBranch, scanResultId: scanResult.id }, {
       retryLimit: 3,
       retryBackoff: true,
-      expireInSeconds: 30 * 60,
+      expireInSeconds: 60 * 60, // 1 hour
     });
+
+    return scanResult;
   },
 
   async queueTaskPlanning(taskId: string) {
     await boss.send(JOB_NAMES.TASK_PLAN, { taskId }, {
       retryLimit: 3,
       retryBackoff: true,
-      expireInSeconds: 15 * 60,
+      expireInSeconds: 60 * 60, // 1 hour
     });
   },
 

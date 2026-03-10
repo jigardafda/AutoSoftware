@@ -24,10 +24,10 @@ async function isScanCancelled(scanResultId: string): Promise<boolean> {
   return scan?.status === "cancelled";
 }
 
-export async function handleRepoScan(jobs: { data: { repoId: string; projectId?: string; branch?: string } }[]) {
+export async function handleRepoScan(jobs: { data: { repoId: string; projectId?: string; branch?: string; scanResultId?: string; source?: "manual" | "scheduled" } }[]) {
   const job = jobs[0];
-  const { repoId, projectId, branch: requestedBranch } = job.data;
-  console.log(`Starting scan for repo ${repoId}${requestedBranch ? ` on branch ${requestedBranch}` : ""}`);
+  const { repoId, projectId, branch: requestedBranch, scanResultId: existingScanId, source = "manual" } = job.data;
+  console.log(`Starting scan for repo ${repoId}${requestedBranch ? ` on branch ${requestedBranch}` : ""}${existingScanId ? ` (scan ${existingScanId})` : ""} [${source}]`);
 
   let repo: any;
   try {
@@ -51,14 +51,25 @@ export async function handleRepoScan(jobs: { data: { repoId: string; projectId?:
 
   const account = repo.user.accounts.find((a: any) => a.provider === repo.provider);
   if (!account) {
-    await prisma.scanResult.create({
-      data: {
-        repositoryId: repoId,
-        status: "failed",
-        summary: `No OAuth account found for provider ${repo.provider}`,
-        analysisData: {},
-      },
-    });
+    if (existingScanId) {
+      await prisma.scanResult.update({
+        where: { id: existingScanId },
+        data: {
+          status: "failed",
+          summary: `No OAuth account found for provider ${repo.provider}`,
+        },
+      });
+    } else {
+      await prisma.scanResult.create({
+        data: {
+          repositoryId: repoId,
+          status: "failed",
+          source,
+          summary: `No OAuth account found for provider ${repo.provider}`,
+          analysisData: {},
+        },
+      });
+    }
     console.error(`No account found for provider ${repo.provider}`);
     return;
   }
@@ -68,14 +79,23 @@ export async function handleRepoScan(jobs: { data: { repoId: string; projectId?:
   const { apiKeyId } = auth;
 
   if (!isValidAuth(auth)) {
-    await prisma.scanResult.create({
-      data: {
-        repositoryId: repoId,
-        status: "failed",
-        summary: "No authentication configured. Set CLAUDE_CODE_OAUTH_TOKEN (free with Max subscription) or ANTHROPIC_API_KEY in .env.",
-        analysisData: {},
-      },
-    });
+    const errorSummary = "No authentication configured. Set CLAUDE_CODE_OAUTH_TOKEN (free with Max subscription) or ANTHROPIC_API_KEY in .env.";
+    if (existingScanId) {
+      await prisma.scanResult.update({
+        where: { id: existingScanId },
+        data: { status: "failed", summary: errorSummary },
+      });
+    } else {
+      await prisma.scanResult.create({
+        data: {
+          repositoryId: repoId,
+          status: "failed",
+          source,
+          summary: errorSummary,
+          analysisData: {},
+        },
+      });
+    }
     await prisma.repository.update({
       where: { id: repoId },
       data: { status: "error" },
@@ -93,10 +113,63 @@ export async function handleRepoScan(jobs: { data: { repoId: string; projectId?:
     data: { status: "scanning" },
   });
 
-  const scanResult = await prisma.scanResult.create({
-    data: { repositoryId: repoId, status: "in_progress", analysisData: {} },
+  // Determine the target branch for this scan
+  const targetBranch = requestedBranch || repo.defaultBranch;
+
+  // Check for existing active scans on the same repo+branch
+  const activeScan = await prisma.scanResult.findFirst({
+    where: {
+      repositoryId: repoId,
+      branch: targetBranch,
+      status: { in: ["queued", "in_progress"] },
+      id: existingScanId ? { not: existingScanId } : undefined, // Exclude our own scan if we already have one
+    },
+    select: { id: true, status: true, scannedAt: true },
   });
-  await emitLog(scanResult.id, "step", "Scan started");
+
+  // Use existing scan record if provided (created by scheduler for manual scans), otherwise create new one
+  const startedAt = new Date();
+  let scanResult;
+  if (existingScanId) {
+    scanResult = await prisma.scanResult.update({
+      where: { id: existingScanId },
+      data: { status: "in_progress", startedAt, branch: targetBranch },
+    });
+    console.log(`Using existing scan record ${existingScanId}`);
+  } else {
+    // For scheduled scans or legacy jobs, create record when processing starts
+    scanResult = await prisma.scanResult.create({
+      data: { repositoryId: repoId, status: "in_progress", source, startedAt, branch: targetBranch, analysisData: {} },
+    });
+    console.log(`Created scan record ${scanResult.id} [${source}]`);
+  }
+
+  // If another scan is already active for this repo+branch, skip this one
+  if (activeScan) {
+    const skipMessage = `Scan skipped: another scan (${activeScan.id}) is already ${activeScan.status} for ${repo.fullName} on branch ${targetBranch}`;
+    console.log(skipMessage);
+    await emitLog(scanResult.id, "info", skipMessage);
+    await prisma.scanResult.update({
+      where: { id: scanResult.id },
+      data: {
+        status: "skipped",
+        completedAt: new Date(),
+        summary: `Skipped: scan ${activeScan.id} already running on this branch`,
+      },
+    });
+    await prisma.repository.update({
+      where: { id: repoId },
+      data: { status: "idle" },
+    });
+    return;
+  }
+
+  await emitLog(scanResult.id, "step", `Scan started on branch ${targetBranch}`);
+
+  // Track total usage across all AI calls
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalCostUsd = 0;
 
   try {
     await emitLog(scanResult.id, "step", "Cloning repository...");
@@ -172,6 +245,9 @@ IMPORTANT: Respond with ONLY a JSON array of tasks:
       { apiKeyId, source: "scan", sourceId: repoId }
     );
 
+    totalInputTokens += scanUsage.inputTokens;
+    totalOutputTokens += scanUsage.outputTokens;
+    totalCostUsd += scanUsage.costUsd;
     console.log(`Scan usage: ~${scanUsage.inputTokens} input, ~${scanUsage.outputTokens} output, ~$${scanUsage.costUsd.toFixed(4)}`);
 
     await emitLog(scanResult.id, "info", "Analysis complete");
@@ -222,11 +298,14 @@ If all new tasks are duplicates, return []. If none are duplicates, return all i
         const dedupUserMessage = `EXISTING TASKS:\n${existingTasks.map((t: any, i: number) => `${i}. [${t.type}] ${t.title}: ${t.description.slice(0, 200)}`).join("\n")}\n\nNEW TASKS:\n${tasks.map((t, i) => `${i}. [${t.type}] ${t.title}: ${t.description.slice(0, 200)}`).join("\n")}`;
 
         // Use Agent SDK for deduplication (supports OAuth!) with usage tracking
-        const { result: dedupResult } = await simpleQueryWithUsage(
+        const { result: dedupResult, usage: dedupUsage } = await simpleQueryWithUsage(
           dedupSystemPrompt,
           dedupUserMessage,
           { apiKeyId, source: "scan", sourceId: repoId }
         );
+        totalInputTokens += dedupUsage.inputTokens;
+        totalOutputTokens += dedupUsage.outputTokens;
+        totalCostUsd += dedupUsage.costUsd;
 
         const match = dedupResult.match(/\[[\d\s,]*\]/);
         if (match) {
@@ -270,15 +349,38 @@ If all new tasks are duplicates, return []. If none are duplicates, return all i
       tasksCreated++;
     }
 
+    const completedAt = new Date();
     await prisma.scanResult.update({
       where: { id: scanResult.id },
       data: {
         status: "completed",
+        completedAt,
         summary: `Found ${newTasks.length} potential improvements`,
         tasksCreated: newTasks.length,
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+        estimatedCostUsd: totalCostUsd,
         analysisData: { rawAnalysis: analysisText, tasks } as any,
       },
     });
+
+    // Record usage to independent table (persists even if scan is deleted)
+    await prisma.usageRecord.create({
+      data: {
+        userId: repo.userId,
+        repositoryId: repoId,
+        projectId: projectId || null,
+        apiKeyId: apiKeyId || null,
+        source: "scan",
+        sourceId: scanResult.id,
+        model: "claude-sonnet-4-20250514", // Agent SDK default
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+        estimatedCostUsd: totalCostUsd,
+        authType: auth.authType === "oauth" ? "oauth" : "api_key",
+      },
+    });
+
     await emitLog(scanResult.id, "success", `Scan completed: ${tasksCreated} tasks created`);
 
     await prisma.repository.update({
@@ -286,7 +388,8 @@ If all new tasks are duplicates, return []. If none are duplicates, return all i
       data: { status: "idle", lastScannedAt: new Date() },
     });
 
-    console.log(`Scan complete for ${repo.fullName}: ${tasksCreated} tasks created`);
+    const durationSec = Math.round((completedAt.getTime() - startedAt.getTime()) / 1000);
+    console.log(`Scan complete for ${repo.fullName}: ${tasksCreated} tasks created, ${durationSec}s, ~$${totalCostUsd.toFixed(4)}`);
   } catch (err) {
     console.error(`Scan failed for repo ${repoId}:`, err);
 
@@ -302,10 +405,33 @@ If all new tasks are duplicates, return []. If none are duplicates, return all i
       where: { id: scanResult.id },
       data: {
         status: "failed",
+        completedAt: new Date(),
         summary: err instanceof Error ? err.message : "Unknown error",
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+        estimatedCostUsd: totalCostUsd,
         analysisData: {},
       },
     });
+
+    // Record usage even for failed scans
+    if (totalInputTokens > 0 || totalOutputTokens > 0) {
+      await prisma.usageRecord.create({
+        data: {
+          userId: repo.userId,
+          repositoryId: repoId,
+          projectId: projectId || null,
+          apiKeyId: apiKeyId || null,
+          source: "scan",
+          sourceId: scanResult.id,
+          model: "claude-sonnet-4-20250514",
+          inputTokens: totalInputTokens,
+          outputTokens: totalOutputTokens,
+          estimatedCostUsd: totalCostUsd,
+          authType: auth.authType === "oauth" ? "oauth" : "api_key",
+        },
+      }).catch(() => {}); // Don't fail if usage record fails
+    }
 
     await prisma.repository.update({
       where: { id: repoId },

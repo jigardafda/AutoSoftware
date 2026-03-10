@@ -78,8 +78,8 @@ export const scanRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(404).send({ error: { message: "Scan not found" } });
     }
 
-    if (scan.status !== "in_progress") {
-      return reply.code(400).send({ error: { message: "Scan is not in progress" } });
+    if (scan.status !== "in_progress" && scan.status !== "queued") {
+      return reply.code(400).send({ error: { message: "Scan is not in progress or queued" } });
     }
 
     // Mark the scan as cancelled

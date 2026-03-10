@@ -54,18 +54,16 @@ function CountBadge({ label, count, variant }: { label: string; count: number; v
 function timeAgo(date: string | null): string {
   if (!date) return "-";
   const diff = Date.now() - new Date(date).getTime();
-  const absDiff = Math.abs(diff);
-  const seconds = Math.floor(absDiff / 1000);
-
-  // Format the relative time
-  let relative: string;
-  if (seconds < 60) relative = `${seconds}s`;
-  else if (seconds < 3600) relative = `${Math.floor(seconds / 60)}m`;
-  else if (seconds < 86400) relative = `${Math.floor(seconds / 3600)}h`;
-  else relative = `${Math.floor(seconds / 86400)}d`;
-
-  // Show "ago" for past, "ahead" for future (indicates timezone issue)
-  return diff < 0 ? `in ${relative}` : `${relative} ago`;
+  // Handle future dates (timezone mismatch) gracefully
+  if (diff < 0) return "just now";
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 export function Queues() {

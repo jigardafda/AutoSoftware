@@ -2,9 +2,11 @@ import { Link } from "react-router-dom";
 
 // Matches file paths like "src/foo/bar.ts", "OrbEclipse Shared/Scenes/GameScene.swift"
 // A path must contain at least one "/" and end with a known extension.
+// First segment cannot contain spaces (to avoid matching "In backend/..." as a path).
+// Subsequent segments can have spaces for paths like "My Folder/file.ts".
 const FILE_EXTENSIONS = "tsx?|jsx?|py|rs|go|java|json|ya?ml|css|html?|sql|sh|bash|md|toml|xml|c|cpp|h|hpp|rb|php|swift|kt|m|mm|gradle|plist|xcconfig|pbxproj|strings|storyboard|xib|entitlements|resolved|lock|txt|csv|cfg|ini|conf|env|gitignore|dockerignore|Dockerfile|Makefile";
 const FILE_PATH_RE = new RegExp(
-  `(?<![\\w/])([\\w][\\w .\\-]*(?:/[\\w][\\w .\\-]*)+\\.(?:${FILE_EXTENSIONS}))(?:\\b|(?=\\s|$|[,;:)\\]]))`,
+  `(?<![\\w/])([\\w][\\w.\\-]*(?:/[\\w][\\w .\\-]*)+\\.(?:${FILE_EXTENSIONS}))(?:\\b|(?=\\s|$|[,;:)\\]]))`,
   "g"
 );
 

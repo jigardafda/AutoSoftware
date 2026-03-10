@@ -145,8 +145,8 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!repo) return reply.code(404).send({ error: { message: "Repo not found" } });
 
-    await schedulerService.triggerScan(repo.id, request.body?.projectId, request.body?.branch);
-    return { data: { queued: true } };
+    const scanResult = await schedulerService.triggerScan(repo.id, request.body?.projectId, request.body?.branch);
+    return { data: { queued: true, scan: scanResult } };
   });
 
   // GET /:id/stats — aggregated stats for repo detail page
@@ -184,18 +184,34 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
       }),
     ]);
 
-    // Aggregate usage directly from tasks (always recorded regardless of API key source)
-    const totalInputTokens = tasks.reduce((s, t) => s + t.inputTokens, 0);
-    const totalOutputTokens = tasks.reduce((s, t) => s + t.outputTokens, 0);
-    const totalCost = tasks.reduce((s, t) => s + t.estimatedCostUsd, 0);
-    const totalRequests = tasks.filter((t) => t.inputTokens > 0 || t.outputTokens > 0).length;
+    // Aggregate usage from both tasks AND scans
+    const taskInputTokens = tasks.reduce((s, t) => s + t.inputTokens, 0);
+    const taskOutputTokens = tasks.reduce((s, t) => s + t.outputTokens, 0);
+    const taskCost = tasks.reduce((s, t) => s + t.estimatedCostUsd, 0);
+    const taskRequests = tasks.filter((t) => t.inputTokens > 0 || t.outputTokens > 0).length;
 
-    // Daily cost aggregation from tasks
+    const scanInputTokens = scans.reduce((s, sc) => s + sc.inputTokens, 0);
+    const scanOutputTokens = scans.reduce((s, sc) => s + sc.outputTokens, 0);
+    const scanCost = scans.reduce((s, sc) => s + sc.estimatedCostUsd, 0);
+    const scanRequests = scans.filter((sc) => sc.inputTokens > 0 || sc.outputTokens > 0).length;
+
+    const totalInputTokens = taskInputTokens + scanInputTokens;
+    const totalOutputTokens = taskOutputTokens + scanOutputTokens;
+    const totalCost = taskCost + scanCost;
+    const totalRequests = taskRequests + scanRequests;
+
+    // Daily cost aggregation from tasks and scans
     const dailyCost = new Map<string, number>();
     for (const t of tasks) {
       if (t.estimatedCostUsd > 0) {
         const day = t.createdAt.toISOString().slice(0, 10);
         dailyCost.set(day, (dailyCost.get(day) || 0) + t.estimatedCostUsd);
+      }
+    }
+    for (const sc of scans) {
+      if (sc.estimatedCostUsd > 0) {
+        const day = sc.scannedAt.toISOString().slice(0, 10);
+        dailyCost.set(day, (dailyCost.get(day) || 0) + sc.estimatedCostUsd);
       }
     }
 

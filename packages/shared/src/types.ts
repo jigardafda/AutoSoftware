@@ -4,7 +4,8 @@ export type TaskType = "improvement" | "bugfix" | "feature" | "refactor" | "secu
 export type TaskPriority = "low" | "medium" | "high" | "critical";
 export type TaskStatus = "planning" | "awaiting_input" | "planned" | "pending" | "in_progress" | "completed" | "failed" | "cancelled";
 export type TaskSource = "auto_scan" | "manual" | "external_import" | "embed";
-export type ScanStatus = "in_progress" | "completed" | "failed" | "cancelled";
+export type ScanStatus = "queued" | "in_progress" | "completed" | "failed" | "cancelled";
+export type ScanSource = "manual" | "scheduled";
 
 export interface UserDTO {
   id: string;
@@ -74,9 +75,15 @@ export interface ScanResultDTO {
   id: string;
   repositoryId: string;
   scannedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
   status: ScanStatus;
+  source: ScanSource;
   summary: string | null;
   tasksCreated: number;
+  inputTokens: number;
+  outputTokens: number;
+  estimatedCostUsd: number;
 }
 
 export interface CreateTaskInput {

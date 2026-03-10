@@ -82,10 +82,17 @@ enum EmbedScreeningStatus {
 }
 
 enum ScanStatus {
+  queued
   in_progress
   completed
   failed
   cancelled
+  skipped       // Skipped because another scan is already active for this repo+branch
+}
+
+enum ScanSource {
+  manual
+  scheduled
 }
 
 enum ClaudeKeyType {
@@ -227,15 +234,26 @@ model PlanningQuestion {
 model ScanResult {
   id           String     @id @default(cuid())
   repositoryId String
-  scannedAt    DateTime   @default(now())
-  status       ScanStatus
+  branch       String?                     // Which branch is being scanned (null = repo default)
+  scannedAt    DateTime   @default(now())  // When scan was queued/created
+  startedAt    DateTime?                   // When worker started processing
+  completedAt  DateTime?                   // When scan finished (success/fail/cancel)
+  status       ScanStatus @default(queued)
+  source       ScanSource @default(manual)
   summary      String?
   tasksCreated Int        @default(0)
   analysisData Json       @default("{}")
 
+  // Usage tracking (denormalized for quick display)
+  inputTokens      Int      @default(0)
+  outputTokens     Int      @default(0)
+  estimatedCostUsd Float    @default(0)
+
   repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
   tasks      Task[]
   logs       ScanLog[]
+
+  @@index([repositoryId, status])  // For checking active scans per repo
 }
 
 model ScanLog {
@@ -308,6 +326,32 @@ model ApiKeyUsage {
 
   apiKey ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
   @@index([apiKeyId, createdAt])
+}
+
+// Independent usage tracking - persists even if related entities are deleted
+model UsageRecord {
+  id               String   @id @default(cuid())
+  userId           String
+  repositoryId     String?
+  projectId        String?
+  apiKeyId         String?  // Which API key was used (null for OAuth)
+
+  source           String   // "scan" | "task_plan" | "task_execute" | "chat"
+  sourceId         String?  // Reference to scan/task id (may become orphaned)
+
+  model            String   // Claude model used
+  inputTokens      Int
+  outputTokens     Int
+  estimatedCostUsd Float
+
+  authType         String   @default("api_key") // "api_key" | "oauth"
+  metadata         Json     @default("{}")      // Additional context
+  createdAt        DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([repositoryId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([source, createdAt])
 }
 
 model Project {
