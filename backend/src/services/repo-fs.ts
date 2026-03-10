@@ -122,6 +122,28 @@ export async function getCurrentBranch(repoId: string): Promise<string | null> {
   }
 }
 
+export async function checkoutBranch(repoId: string, branch: string): Promise<void> {
+  const dir = repoDir(repoId);
+  const { execFile } = await import("child_process");
+  const { promisify } = await import("util");
+  const execFileAsync = promisify(execFile);
+
+  // Validate branch name to prevent injection (alphanumeric, dash, underscore, slash, dot)
+  if (!/^[\w\-./]+$/.test(branch)) {
+    throw new RepoFsError("Invalid branch name", "INVALID_BRANCH");
+  }
+
+  // Fetch the branch from remote first (in case it's new)
+  try {
+    await execFileAsync("git", ["fetch", "origin", branch], { cwd: dir });
+  } catch {
+    // Ignore fetch errors - branch might already be local
+  }
+
+  // Checkout the branch
+  await execFileAsync("git", ["checkout", branch], { cwd: dir });
+}
+
 export async function listDirectory(
   repoId: string,
   relativePath: string,

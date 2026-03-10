@@ -42,21 +42,33 @@ export const api = {
     update: (id: string, body: any) =>
       request<any>(`/repos/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     delete: (id: string) => request<any>(`/repos/${id}`, { method: "DELETE" }),
-    scan: (id: string, projectId?: string) =>
-      request<any>(`/repos/${id}/scan`, {
+    scan: (id: string, projectId?: string, branch?: string) => {
+      const body: Record<string, string> = {};
+      if (projectId) body.projectId = projectId;
+      if (branch) body.branch = branch;
+      return request<any>(`/repos/${id}/scan`, {
         method: "POST",
-        body: projectId ? JSON.stringify({ projectId }) : undefined,
-      }),
+        body: Object.keys(body).length ? JSON.stringify(body) : undefined,
+      });
+    },
     scans: (id: string) => request<any[]>(`/repos/${id}/scans`),
     stats: (id: string) => request<any>(`/repos/${id}/stats`),
-    tree: (id: string, path?: string) => {
-      const qs = path ? `?path=${encodeURIComponent(path)}` : "";
+    tree: (id: string, path?: string, branch?: string) => {
+      const params = new URLSearchParams();
+      if (path) params.set("path", path);
+      if (branch) params.set("branch", branch);
+      const qs = params.toString() ? `?${params.toString()}` : "";
       return requestFull<{ data: any[]; branch?: string }>(`/repos/${id}/tree${qs}`);
     },
-    file: (id: string, path: string) =>
-      request<any>(`/repos/${id}/file?path=${encodeURIComponent(path)}`),
+    file: (id: string, path: string, branch?: string) => {
+      const params = new URLSearchParams({ path });
+      if (branch) params.set("branch", branch);
+      return request<any>(`/repos/${id}/file?${params.toString()}`);
+    },
     rawUrl: (id: string, path: string) =>
       `/api/repos/${id}/raw?path=${encodeURIComponent(path)}`,
+    branches: (id: string) =>
+      request<{ name: string; isDefault: boolean }[]>(`/repos/${id}/branches`),
   },
   tasks: {
     list: (params?: Record<string, string>) => {
@@ -105,6 +117,8 @@ export const api = {
     stats: (id: string) => request<any>(`/projects/${id}/stats`),
     addRepo: (id: string, repositoryId: string) =>
       request<any>(`/projects/${id}/repos`, { method: "POST", body: JSON.stringify({ repositoryId }) }),
+    updateRepo: (id: string, repoId: string, body: { branchOverride?: string | null }) =>
+      request<any>(`/projects/${id}/repos/${repoId}`, { method: "PATCH", body: JSON.stringify(body) }),
     removeRepo: (id: string, repoId: string) =>
       request<any>(`/projects/${id}/repos/${repoId}`, { method: "DELETE" }),
     getEmbedConfig: (id: string) => request<any>(`/projects/${id}/embed-config`),
@@ -134,6 +148,7 @@ export const api = {
       const qs = after ? `?after=${encodeURIComponent(after)}` : "";
       return request<any[]>(`/scans/${id}/logs${qs}`);
     },
+    cancel: (id: string) => request<{ success: boolean }>(`/scans/${id}/cancel`, { method: "POST" }),
   },
   ai: {
     command: (text: string) =>

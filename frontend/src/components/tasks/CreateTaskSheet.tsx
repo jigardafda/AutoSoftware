@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { RefreshCw, Loader2, Check, ChevronsUpDown, Github } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +23,20 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { BranchSelect } from "@/components/BranchSelect";
 
 interface CreateTaskSheetProps {
   open: boolean;
@@ -29,6 +45,7 @@ interface CreateTaskSheetProps {
 
 const INITIAL_FORM = {
   repositoryId: "",
+  targetBranch: "",
   title: "",
   description: "",
   type: "improvement" as string,
@@ -39,11 +56,35 @@ const INITIAL_FORM = {
 export function CreateTaskSheet({ open, onOpenChange }: CreateTaskSheetProps) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState(INITIAL_FORM);
+  const [repoOpen, setRepoOpen] = useState(false);
 
   const { data: repos = [] } = useQuery({
     queryKey: ["repos"],
     queryFn: api.repos.list,
   });
+
+  // Fetch branches when a repository is selected
+  const {
+    data: branches = [],
+    isLoading: branchesLoading,
+    refetch: refetchBranches,
+    isFetching: branchesFetching,
+  } = useQuery({
+    queryKey: ["repo-branches", form.repositoryId],
+    queryFn: () => api.repos.branches(form.repositoryId),
+    enabled: !!form.repositoryId,
+    staleTime: 30 * 1000, // 30 seconds
+  });
+
+  // Auto-select default branch when branches load
+  useEffect(() => {
+    if (branches.length > 0 && !form.targetBranch) {
+      const defaultBranch = branches.find((b) => b.isDefault);
+      if (defaultBranch) {
+        setForm((prev) => ({ ...prev, targetBranch: defaultBranch.name }));
+      }
+    }
+  }, [branches, form.targetBranch]);
 
   const createMutation = useMutation({
     mutationFn: api.tasks.create,
@@ -64,7 +105,11 @@ export function CreateTaskSheet({ open, onOpenChange }: CreateTaskSheetProps) {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
-    createMutation.mutate(form);
+    // Send undefined for targetBranch if empty (server will use repo default)
+    createMutation.mutate({
+      ...form,
+      targetBranch: form.targetBranch || undefined,
+    });
   }
 
   return (
@@ -80,22 +125,93 @@ export function CreateTaskSheet({ open, onOpenChange }: CreateTaskSheetProps) {
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div className="space-y-2">
             <Label htmlFor="repository">Repository</Label>
-            <Select
-              value={form.repositoryId}
-              onValueChange={(v) => setForm({ ...form, repositoryId: v })}
-            >
-              <SelectTrigger id="repository">
-                <SelectValue placeholder="Select repository" />
-              </SelectTrigger>
-              <SelectContent>
-                {repos.map((r: any) => (
-                  <SelectItem key={r.id} value={r.id}>
-                    {r.fullName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={repoOpen} onOpenChange={setRepoOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={repoOpen}
+                  className="w-full justify-between font-normal"
+                >
+                  {form.repositoryId ? (
+                    <span className="flex items-center gap-2 truncate">
+                      <Github className="h-4 w-4 shrink-0" />
+                      <span className="truncate">
+                        {repos.find((r: any) => r.id === form.repositoryId)?.fullName}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">Select repository...</span>
+                  )}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search repositories..." />
+                  <CommandList>
+                    <CommandEmpty>No repository found.</CommandEmpty>
+                    <CommandGroup>
+                      {repos.map((r: any) => (
+                        <CommandItem
+                          key={r.id}
+                          value={r.fullName}
+                          onSelect={() => {
+                            setForm({ ...form, repositoryId: r.id, targetBranch: "" });
+                            setRepoOpen(false);
+                          }}
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              form.repositoryId === r.id ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          <Github className="mr-2 h-4 w-4" />
+                          <span className="truncate">{r.fullName}</span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
+
+          {form.repositoryId && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="branch">Target Branch</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0"
+                  onClick={() => refetchBranches()}
+                  disabled={branchesFetching}
+                >
+                  <RefreshCw className={`h-3 w-3 ${branchesFetching ? "animate-spin" : ""}`} />
+                </Button>
+              </div>
+              {branchesLoading ? (
+                <div className="flex items-center gap-2 h-10 px-3 border rounded-md text-sm">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <span className="text-muted-foreground">Loading branches...</span>
+                </div>
+              ) : (
+                <BranchSelect
+                  branches={branches}
+                  value={form.targetBranch || null}
+                  onChange={(branch) => setForm({ ...form, targetBranch: branch || "" })}
+                  disabled={branchesLoading}
+                  className="w-full"
+                />
+              )}
+              <p className="text-xs text-muted-foreground">
+                Changes will be committed to a new branch and a PR will target this branch
+              </p>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="title">Title</Label>

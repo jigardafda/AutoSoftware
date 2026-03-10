@@ -12,6 +12,7 @@ import {
   XCircle,
   Loader2,
   GitCommit,
+  GitBranch,
   Trash2,
   MessageSquare,
   ClipboardList,
@@ -55,6 +56,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Markdown } from "@/components/ui/markdown";
+import { BranchSelect } from "@/components/BranchSelect";
 import { cn } from "@/lib/utils";
 
 // --- Helpers ---
@@ -547,6 +549,15 @@ export function TaskDetail() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const updateBranchMutation = useMutation({
+    mutationFn: (targetBranch: string | null) => api.tasks.update(id!, { targetBranch }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["task", id] });
+      toast.success("Branch updated");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const { data: task, isLoading } = useQuery({
     queryKey: ["task", id],
     queryFn: () => api.tasks.get(id!),
@@ -555,6 +566,14 @@ export function TaskDetail() {
       const s = query.state.data?.status;
       return (s === "in_progress" || s === "planning") ? 3000 : false;
     },
+  });
+
+  // Fetch branches for branch selector
+  const { data: branches } = useQuery({
+    queryKey: ["repo-branches", task?.repositoryId],
+    queryFn: () => api.repos.branches(task!.repositoryId),
+    enabled: !!task?.repositoryId,
+    staleTime: 30_000,
   });
 
   // Live logs state
@@ -714,6 +733,21 @@ export function TaskDetail() {
           <Badge variant="outline" className={type.className}>
             {type.label}
           </Badge>
+          {/* Branch selector - editable for non-started tasks */}
+          {["pending", "planned", "planning", "awaiting_input"].includes(task.status) ? (
+            <BranchSelect
+              branches={branches}
+              value={task.targetBranch}
+              onChange={(branch) => updateBranchMutation.mutate(branch)}
+              size="sm"
+              className="h-7"
+            />
+          ) : task.targetBranch ? (
+            <Badge variant="outline" className="gap-1">
+              <GitBranch className="h-3 w-3" />
+              {task.targetBranch}
+            </Badge>
+          ) : null}
           {task.externalLink && (
             <ExternalSourceBadge externalLink={task.externalLink} />
           )}

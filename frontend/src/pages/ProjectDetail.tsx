@@ -22,6 +22,8 @@ import {
   Unplug,
   Link2,
   Import,
+  Settings,
+  Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -150,6 +152,10 @@ export function ProjectDetail() {
   const [nameValue, setNameValue] = useState("");
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [importLink, setImportLink] = useState<any>(null);
+  const [editingDefaultBranch, setEditingDefaultBranch] = useState(false);
+  const [defaultBranchValue, setDefaultBranchValue] = useState("");
+  const [editingRepoBranch, setEditingRepoBranch] = useState<string | null>(null);
+  const [repoBranchValue, setRepoBranchValue] = useState("");
 
   const VALID_TABS = ["overview", "repos", "documents", "tasks", "integrations", "usage", "embed"] as const;
   const tab = useMemo(() => {
@@ -208,6 +214,17 @@ export function ProjectDetail() {
       queryClient.invalidateQueries({ queryKey: ["project", id] });
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       toast.success("Repository removed from project");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const updateRepoBranchMutation = useMutation({
+    mutationFn: ({ repoId, branchOverride }: { repoId: string; branchOverride: string | null }) =>
+      api.projects.updateRepo(id!, repoId, { branchOverride }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["project", id] });
+      setEditingRepoBranch(null);
+      toast.success("Branch override updated");
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -313,6 +330,42 @@ export function ProjectDetail() {
             {project.description && (
               <p className="text-sm text-muted-foreground truncate mt-0.5">{project.description}</p>
             )}
+            {/* Default Branch Badge */}
+            <div className="flex items-center gap-2 mt-1">
+              {editingDefaultBranch ? (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    updateMutation.mutate({ defaultBranch: defaultBranchValue || null });
+                    setEditingDefaultBranch(false);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <Input
+                    value={defaultBranchValue}
+                    onChange={(e) => setDefaultBranchValue(e.target.value)}
+                    placeholder="e.g., develop"
+                    className="h-6 w-32 text-xs"
+                    autoFocus
+                  />
+                  <Button type="submit" size="sm" variant="outline" className="h-6 text-xs">Save</Button>
+                  <Button type="button" size="sm" variant="ghost" className="h-6 text-xs" onClick={() => setEditingDefaultBranch(false)}>Cancel</Button>
+                </form>
+              ) : (
+                <Badge
+                  variant="outline"
+                  className="gap-1 cursor-pointer hover:bg-muted transition-colors"
+                  onClick={() => {
+                    setDefaultBranchValue(project.defaultBranch || "");
+                    setEditingDefaultBranch(true);
+                  }}
+                >
+                  <GitBranch className="h-3 w-3" />
+                  {project.defaultBranch || "No default branch"}
+                  <Pencil className="h-2.5 w-2.5 ml-1 text-muted-foreground" />
+                </Badge>
+              )}
+            </div>
           </div>
         </div>
         <ConfirmDeleteDialog
@@ -479,6 +532,7 @@ export function ProjectDetail() {
                   <TableRow>
                     <TableHead>Repository</TableHead>
                     <TableHead className="w-20">Provider</TableHead>
+                    <TableHead className="w-36">Branch</TableHead>
                     <TableHead className="w-20">Status</TableHead>
                     <TableHead className="w-24">Last Scanned</TableHead>
                     <TableHead className="w-8"></TableHead>
@@ -500,6 +554,49 @@ export function ProjectDetail() {
                         </div>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground capitalize">{repo.provider}</TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        {editingRepoBranch === repo.id ? (
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              updateRepoBranchMutation.mutate({
+                                repoId: repo.id,
+                                branchOverride: repoBranchValue || null,
+                              });
+                            }}
+                            className="flex items-center gap-1"
+                          >
+                            <Input
+                              value={repoBranchValue}
+                              onChange={(e) => setRepoBranchValue(e.target.value)}
+                              placeholder={project.defaultBranch || repo.defaultBranch}
+                              className="h-6 w-24 text-xs"
+                              autoFocus
+                            />
+                            <Button type="submit" size="sm" variant="ghost" className="h-6 w-6 p-0">
+                              <CheckCircle2 className="h-3 w-3" />
+                            </Button>
+                            <Button type="button" size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setEditingRepoBranch(null)}>
+                              <XCircle className="h-3 w-3" />
+                            </Button>
+                          </form>
+                        ) : (
+                          <div
+                            className="flex items-center gap-1 cursor-pointer group"
+                            onClick={() => {
+                              setRepoBranchValue(repo.branchOverride || "");
+                              setEditingRepoBranch(repo.id);
+                            }}
+                          >
+                            <GitBranch className="h-3 w-3 text-muted-foreground" />
+                            <span className="text-xs">{repo.effectiveBranch}</span>
+                            {repo.branchOverride && (
+                              <Badge variant="outline" className="text-[9px] px-1 py-0 h-4">override</Badge>
+                            )}
+                            <Pencil className="h-2.5 w-2.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                        )}
+                      </TableCell>
                       <TableCell><StatusBadge status={repo.status} /></TableCell>
                       <TableCell className="text-xs text-muted-foreground">{relativeTime(repo.lastScannedAt)}</TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>

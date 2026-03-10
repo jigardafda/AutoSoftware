@@ -107,12 +107,27 @@ export const taskRoutes: FastifyPluginAsync = async (app) => {
   );
 
   app.post<{ Body: CreateTaskInput & { projectId?: string; skipPlanning?: boolean } }>("/", async (request, reply) => {
-    const { repositoryId, title, description, type, priority, projectId, skipPlanning } = request.body;
+    const { repositoryId, title, description, type, priority, targetBranch, projectId, skipPlanning } = request.body;
 
     const repo = await prisma.repository.findFirst({
       where: { id: repositoryId, userId: request.userId },
     });
     if (!repo) return reply.code(404).send({ error: { message: "Repo not found" } });
+
+    // Resolve effective branch: explicit targetBranch > projectRepo.branchOverride > project.defaultBranch > (null = uses repo.defaultBranch at runtime)
+    let effectiveBranch: string | null = targetBranch || null;
+
+    if (!effectiveBranch && projectId) {
+      // Look up project-level branch settings
+      const projectRepo = await prisma.projectRepository.findUnique({
+        where: { projectId_repositoryId: { projectId, repositoryId } },
+        include: { project: { select: { defaultBranch: true } } },
+      });
+
+      if (projectRepo) {
+        effectiveBranch = projectRepo.branchOverride || projectRepo.project.defaultBranch || null;
+      }
+    }
 
     if (skipPlanning) {
       const task = await prisma.task.create({
@@ -123,6 +138,7 @@ export const taskRoutes: FastifyPluginAsync = async (app) => {
           description,
           type,
           priority,
+          targetBranch: effectiveBranch,
           source: "manual",
           projectId: projectId || null,
         },
@@ -139,6 +155,7 @@ export const taskRoutes: FastifyPluginAsync = async (app) => {
         description,
         type,
         priority,
+        targetBranch: effectiveBranch,
         source: "manual",
         status: "planning",
         projectId: projectId || null,

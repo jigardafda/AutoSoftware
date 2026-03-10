@@ -11,6 +11,7 @@ import {
   Trash2,
   Github,
   GitlabIcon,
+  GitBranch,
   CheckCircle2,
   XCircle,
   Clock,
@@ -44,7 +45,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Pagination, paginate } from "@/components/Pagination";
+import { BranchSelect } from "@/components/BranchSelect";
 import {
   AreaChart,
   Area,
@@ -167,6 +176,7 @@ export function RepoDetail() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [tasksPage, setTasksPage] = useState(0);
   const [scansPage, setScansPage] = useState(0);
+  const [scanBranch, setScanBranch] = useState<string | null>(null);
   const [expandedScan, setExpandedScan] = useState<string | null>(null);
   const [scanLogs, setScanLogs] = useState<Record<string, any[]>>({});
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
@@ -183,8 +193,16 @@ export function RepoDetail() {
     enabled: !!id,
   });
 
+  // Fetch branches for scan dropdown
+  const { data: branches } = useQuery({
+    queryKey: ["repo-branches", id],
+    queryFn: () => api.repos.branches(id!),
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+
   const scanMutation = useMutation({
-    mutationFn: () => api.repos.scan(id!),
+    mutationFn: (branch?: string) => api.repos.scan(id!, undefined, branch),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["repo-stats", id] });
       toast.success("Scan triggered");
@@ -236,6 +254,25 @@ export function RepoDetail() {
       queryClient.invalidateQueries({ queryKey: ["repo-stats", id] });
       setSelectedTasks(new Set());
       toast.success(`${data.deleted} task(s) deleted`);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const cancelScanMutation = useMutation({
+    mutationFn: (scanId: string) => api.scans.cancel(scanId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["repo-stats", id] });
+      toast.success("Scan cancelled");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const updateTaskBranchMutation = useMutation({
+    mutationFn: ({ taskId, targetBranch }: { taskId: string; targetBranch: string | null }) =>
+      api.tasks.update(taskId, { targetBranch }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["repo-stats", id] });
+      toast.success("Task branch updated");
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -305,10 +342,26 @@ export function RepoDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Button size="sm" onClick={() => scanMutation.mutate()} disabled={scanMutation.isPending || repo.status === "scanning"}>
-            {scanMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            Scan
-          </Button>
+          <div className="flex items-center">
+            <BranchSelect
+              branches={branches}
+              value={scanBranch}
+              onChange={setScanBranch}
+              defaultBranchName={repo.defaultBranch}
+              placeholder="Branch to scan"
+              size="sm"
+              className="rounded-r-none border-r-0"
+            />
+            <Button
+              size="sm"
+              className="rounded-l-none"
+              onClick={() => scanMutation.mutate(scanBranch || undefined)}
+              disabled={scanMutation.isPending || repo.status === "scanning"}
+            >
+              {scanMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              Scan
+            </Button>
+          </div>
           <Button size="sm" variant="outline" onClick={() => toggleMutation.mutate(!repo.isActive)}>
             {repo.isActive ? <><Pause className="h-4 w-4" /> Pause</> : <><Play className="h-4 w-4" /> Resume</>}
           </Button>
@@ -580,6 +633,7 @@ export function RepoDetail() {
                       </TableHead>
                       <TableHead className="w-8">Status</TableHead>
                       <TableHead>Title</TableHead>
+                      <TableHead className="w-24">Branch</TableHead>
                       <TableHead className="w-20">Type</TableHead>
                       <TableHead className="w-20">Priority</TableHead>
                       <TableHead className="w-16">Source</TableHead>
@@ -618,6 +672,25 @@ export function RepoDetail() {
                           <TableCell><Icon className={cn("h-4 w-4", statusCfg.className)} /></TableCell>
                           <TableCell>
                             <p className="text-sm font-medium truncate max-w-[300px]">{task.title}</p>
+                          </TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            {["pending", "planned", "planning", "awaiting_input"].includes(task.status) ? (
+                              <BranchSelect
+                                branches={branches}
+                                value={task.targetBranch}
+                                onChange={(branch) => updateTaskBranchMutation.mutate({ taskId: task.id, targetBranch: branch })}
+                                defaultBranchName={repo.defaultBranch}
+                                size="sm"
+                                className="h-6 text-xs w-28"
+                              />
+                            ) : task.targetBranch ? (
+                              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <GitBranch className="h-3 w-3" />
+                                <span className="truncate max-w-[80px]">{task.targetBranch}</span>
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground/50">default</span>
+                            )}
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", TYPE_COLOR[task.type])}>
@@ -675,6 +748,7 @@ export function RepoDetail() {
                       <TableHead>Scanned At</TableHead>
                       <TableHead>Tasks Created</TableHead>
                       <TableHead>Summary / Error</TableHead>
+                      <TableHead className="w-20">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -702,6 +776,11 @@ export function RepoDetail() {
                                 <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                                 In Progress
                               </Badge>
+                            ) : scan.status === "cancelled" ? (
+                              <Badge variant="secondary" className="bg-yellow-500/10 text-yellow-500 border-yellow-500/20">
+                                <Ban className="h-3 w-3 mr-1" />
+                                Cancelled
+                              </Badge>
                             ) : (
                               <Badge variant="secondary" className="bg-red-500/10 text-red-500 border-red-500/20">
                                 <XCircle className="h-3 w-3 mr-1" />
@@ -716,16 +795,38 @@ export function RepoDetail() {
                               <span className="text-red-500 whitespace-pre-wrap break-words">
                                 {scan.summary || "Unknown error"}
                               </span>
+                            ) : scan.status === "cancelled" ? (
+                              <span className="text-yellow-500">
+                                {scan.summary || "Scan cancelled by user"}
+                              </span>
                             ) : (
                               <span className="text-muted-foreground truncate block">
                                 {scan.summary || "--"}
                               </span>
                             )}
                           </TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            {scan.status === "in_progress" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                                onClick={() => cancelScanMutation.mutate(scan.id)}
+                                disabled={cancelScanMutation.isPending}
+                              >
+                                {cancelScanMutation.isPending ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Ban className="h-3 w-3" />
+                                )}
+                                <span className="ml-1">Stop</span>
+                              </Button>
+                            )}
+                          </TableCell>
                         </TableRow>
                         {expandedScan === scan.id && (
                           <TableRow key={`${scan.id}-logs`}>
-                            <TableCell colSpan={5} className="bg-muted/30 p-0">
+                            <TableCell colSpan={6} className="bg-muted/30 p-0">
                               <div className="p-4 space-y-2 max-h-64 overflow-y-auto">
                                 <p className="text-xs font-medium text-muted-foreground mb-2">Scan Logs</p>
                                 {!scanLogs[scan.id] ? (

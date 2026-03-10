@@ -34,7 +34,8 @@ export async function cloneOrPullRepo(
 
 export async function createWorktree(
   repoDir: string,
-  branchName: string
+  branchName: string,
+  baseBranch?: string
 ): Promise<string> {
   const worktreeDir = path.join(config.workDir, "worktrees", branchName);
   await mkdir(path.dirname(worktreeDir), { recursive: true });
@@ -48,8 +49,20 @@ export async function createWorktree(
     // Ignore prune errors
   }
 
-  // Create worktree with new branch (branch name is unique per attempt)
-  await git.raw(["worktree", "add", "-b", branchName, worktreeDir]);
+  if (baseBranch) {
+    // Fetch the target branch to ensure we have the latest
+    try {
+      await git.fetch("origin", baseBranch);
+    } catch (err) {
+      console.warn(`Failed to fetch branch ${baseBranch}, will try to use existing ref:`, err);
+    }
+
+    // Create worktree with new branch based on the target branch
+    await git.raw(["worktree", "add", "-b", branchName, worktreeDir, `origin/${baseBranch}`]);
+  } else {
+    // Create worktree with new branch from HEAD (existing behavior)
+    await git.raw(["worktree", "add", "-b", branchName, worktreeDir]);
+  }
 
   return worktreeDir;
 }

@@ -7,6 +7,7 @@ import {
   ExternalLink,
   Minus,
   MessageSquare,
+  GitBranch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -119,6 +120,7 @@ export function TaskTable({
             </TableHead>
             <SortableHeader label="Status" sortKey="status" sort={sort} onSort={onSort} className="w-10" />
             <SortableHeader label="Title" sortKey="title" sort={sort} onSort={onSort} />
+            <SortableHeader label="Branch" sortKey="targetBranch" sort={sort} onSort={onSort} className="w-28" />
             <SortableHeader label="Type" sortKey="type" sort={sort} onSort={onSort} className="w-24" />
             <SortableHeader label="Priority" sortKey="priority" sort={sort} onSort={onSort} className="w-24" />
             <SortableHeader label="Source" sortKey="source" sort={sort} onSort={onSort} className="w-16" />
@@ -130,7 +132,7 @@ export function TaskTable({
           {tasks.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={8}
+                colSpan={9}
                 className="h-24 text-center text-muted-foreground"
               >
                 No tasks found.
@@ -167,6 +169,14 @@ export function TaskTable({
                       {task.repositoryName || task.repository?.fullName || ""}
                     </p>
                   </div>
+                </TableCell>
+                <TableCell>
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                    <GitBranch className="h-3 w-3" />
+                    <span className="truncate max-w-[80px]">
+                      {task.targetBranch || "default"}
+                    </span>
+                  </span>
                 </TableCell>
                 <TableCell>
                   <Badge

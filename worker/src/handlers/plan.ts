@@ -1,4 +1,5 @@
 import { prisma } from "../db.js";
+import { simpleGit } from "simple-git";
 import { cloneOrPullRepo } from "../services/repo-manager.js";
 import { config } from "../config.js";
 import { getProjectContext } from "../services/project-context.js";
@@ -101,6 +102,17 @@ export async function handleTaskPlanning(jobs: { data: { taskId: string } }[]) {
   try {
     // Clone/pull repo (read-only, no worktree needed for planning)
     const repoDir = await cloneOrPullRepo(repo.id, repo.cloneUrl, account.accessToken, repo.provider);
+
+    // Checkout the target branch so planning sees the correct code state
+    const targetBranch = task.targetBranch || repo.defaultBranch;
+    const git = simpleGit(repoDir);
+    try {
+      await git.fetch("origin", targetBranch);
+      await git.checkout(`origin/${targetBranch}`);
+      console.log(`Planning: checked out origin/${targetBranch}`);
+    } catch (err) {
+      console.warn(`Failed to checkout ${targetBranch}, falling back to current HEAD:`, err);
+    }
 
     const projectContext = await getProjectContext(repo.id, task.projectId);
 

@@ -1,9 +1,9 @@
 import type { FastifyPluginAsync } from "fastify";
 import fs from "fs/promises";
 import { prisma } from "../db.js";
-import { listRemoteRepos } from "../services/git-providers.js";
+import { listRemoteRepos, listRemoteBranches } from "../services/git-providers.js";
 import { schedulerService } from "../services/scheduler.js";
-import { listDirectory, readFile, safePath, getCurrentBranch, RepoFsError } from "../services/repo-fs.js";
+import { listDirectory, readFile, safePath, getCurrentBranch, checkoutBranch, RepoFsError } from "../services/repo-fs.js";
 import type { ConnectRepoInput, UpdateRepoInput, OAuthProvider } from "@autosoftware/shared";
 
 const MIME_TYPES: Record<string, string> = {
@@ -41,6 +41,39 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
       }
       const repos = await listRemoteRepos(provider as OAuthProvider, account.accessToken);
       return { data: repos };
+    }
+  );
+
+  // GET /:id/branches — list branches for a repository
+  app.get<{ Params: { id: string } }>(
+    "/:id/branches",
+    async (request, reply) => {
+      const repo = await prisma.repository.findFirst({
+        where: { id: request.params.id, userId: request.userId },
+      });
+      if (!repo) return reply.code(404).send({ error: { message: "Repo not found" } });
+
+      const account = await prisma.account.findFirst({
+        where: { userId: request.userId, provider: repo.provider },
+      });
+      if (!account) {
+        return reply.code(400).send({ error: { message: "Provider not connected" } });
+      }
+
+      try {
+        const branches = await listRemoteBranches(
+          repo.provider,
+          account.accessToken,
+          repo.fullName,
+          repo.defaultBranch
+        );
+        return { data: branches };
+      } catch (err: any) {
+        if (err.message?.includes("Rate limited")) {
+          return reply.code(429).send({ error: { message: err.message } });
+        }
+        throw err;
+      }
     }
   );
 
@@ -106,13 +139,13 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
     return { data: { success: true } };
   });
 
-  app.post<{ Params: { id: string }; Body: { projectId?: string } }>("/:id/scan", async (request, reply) => {
+  app.post<{ Params: { id: string }; Body: { projectId?: string; branch?: string } }>("/:id/scan", async (request, reply) => {
     const repo = await prisma.repository.findFirst({
       where: { id: request.params.id, userId: request.userId },
     });
     if (!repo) return reply.code(404).send({ error: { message: "Repo not found" } });
 
-    await schedulerService.triggerScan(repo.id, request.body?.projectId);
+    await schedulerService.triggerScan(repo.id, request.body?.projectId, request.body?.branch);
     return { data: { queued: true } };
   });
 
@@ -200,7 +233,7 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // GET /:id/tree — list directory contents for file browser
-  app.get<{ Params: { id: string }; Querystring: { path?: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { path?: string; branch?: string } }>(
     "/:id/tree",
     async (request, reply) => {
       const repo = await prisma.repository.findFirst({
@@ -210,6 +243,13 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
 
       try {
         const requestedPath = request.query.path || "";
+        const requestedBranch = request.query.branch;
+
+        // If a branch is specified, checkout that branch first
+        if (requestedBranch) {
+          await checkoutBranch(repo.id, requestedBranch);
+        }
+
         const [entries, branch] = await Promise.all([
           listDirectory(repo.id, requestedPath),
           !requestedPath ? getCurrentBranch(repo.id) : Promise.resolve(undefined),
@@ -218,6 +258,9 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
       } catch (err: any) {
         if (err instanceof RepoFsError && err.code === "PATH_TRAVERSAL") {
           return reply.code(400).send({ error: { message: "Invalid path" } });
+        }
+        if (err instanceof RepoFsError && err.code === "INVALID_BRANCH") {
+          return reply.code(400).send({ error: { message: "Invalid branch name" } });
         }
         if (err.code === "ENOENT" || err.code === "ENOTDIR") {
           return reply.code(404).send({
@@ -277,7 +320,7 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
   );
 
   // GET /:id/file — read file content for file browser
-  app.get<{ Params: { id: string }; Querystring: { path?: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { path?: string; branch?: string } }>(
     "/:id/file",
     async (request, reply) => {
       const repo = await prisma.repository.findFirst({
@@ -291,11 +334,20 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
       }
 
       try {
+        // If a branch is specified, checkout that branch first
+        const requestedBranch = request.query.branch;
+        if (requestedBranch) {
+          await checkoutBranch(repo.id, requestedBranch);
+        }
+
         const result = await readFile(repo.id, filePath);
         return { data: result };
       } catch (err: any) {
         if (err instanceof RepoFsError && err.code === "PATH_TRAVERSAL") {
           return reply.code(400).send({ error: { message: "Invalid path" } });
+        }
+        if (err instanceof RepoFsError && err.code === "INVALID_BRANCH") {
+          return reply.code(400).send({ error: { message: "Invalid branch name" } });
         }
         if (err.code === "ENOENT") {
           return reply.code(404).send({ error: { message: "File not found" } });

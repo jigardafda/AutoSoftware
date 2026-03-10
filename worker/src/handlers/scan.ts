@@ -16,10 +16,18 @@ async function emitLog(scanResultId: string, level: string, message: string, met
   await prisma.scanLog.create({ data: { scanResultId, level, message, metadata } });
 }
 
-export async function handleRepoScan(jobs: { data: { repoId: string; projectId?: string } }[]) {
+async function isScanCancelled(scanResultId: string): Promise<boolean> {
+  const scan = await prisma.scanResult.findUnique({
+    where: { id: scanResultId },
+    select: { status: true },
+  });
+  return scan?.status === "cancelled";
+}
+
+export async function handleRepoScan(jobs: { data: { repoId: string; projectId?: string; branch?: string } }[]) {
   const job = jobs[0];
-  const { repoId, projectId } = job.data;
-  console.log(`Starting scan for repo ${repoId}`);
+  const { repoId, projectId, branch: requestedBranch } = job.data;
+  console.log(`Starting scan for repo ${repoId}${requestedBranch ? ` on branch ${requestedBranch}` : ""}`);
 
   let repo: any;
   try {
@@ -100,6 +108,32 @@ export async function handleRepoScan(jobs: { data: { repoId: string; projectId?:
     );
     await emitLog(scanResult.id, "info", "Repository ready");
 
+    // Checkout the requested branch (or default branch)
+    const targetBranch = requestedBranch || repo.defaultBranch;
+    if (targetBranch) {
+      const { default: simpleGit } = await import("simple-git");
+      const git = simpleGit(repoDir);
+      await emitLog(scanResult.id, "step", `Checking out branch: ${targetBranch}...`);
+      try {
+        await git.fetch("origin", targetBranch);
+        await git.checkout(targetBranch);
+        await emitLog(scanResult.id, "info", `On branch ${targetBranch}`);
+      } catch (branchErr) {
+        await emitLog(scanResult.id, "info", `Branch checkout failed, using current branch`);
+        console.warn(`Failed to checkout branch ${targetBranch}:`, branchErr);
+      }
+    }
+
+    // Check for cancellation before starting AI analysis
+    if (await isScanCancelled(scanResult.id)) {
+      console.log(`Scan ${scanResult.id} was cancelled, aborting`);
+      await prisma.repository.update({
+        where: { id: repoId },
+        data: { status: "idle" },
+      });
+      return;
+    }
+
     const projectContext = await getProjectContext(repoId, projectId);
 
     await emitLog(scanResult.id, "step", "Analyzing codebase with AI agent...");
@@ -141,6 +175,17 @@ IMPORTANT: Respond with ONLY a JSON array of tasks:
     console.log(`Scan usage: ~${scanUsage.inputTokens} input, ~${scanUsage.outputTokens} output, ~$${scanUsage.costUsd.toFixed(4)}`);
 
     await emitLog(scanResult.id, "info", "Analysis complete");
+
+    // Check for cancellation after AI analysis
+    if (await isScanCancelled(scanResult.id)) {
+      console.log(`Scan ${scanResult.id} was cancelled after analysis, aborting`);
+      await prisma.repository.update({
+        where: { id: repoId },
+        data: { status: "idle" },
+      });
+      return;
+    }
+
     await emitLog(scanResult.id, "step", "Parsing analysis results...");
 
     let tasks: ScanTask[] = [];

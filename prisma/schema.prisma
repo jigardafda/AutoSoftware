@@ -85,6 +85,7 @@ enum ScanStatus {
   in_progress
   completed
   failed
+  cancelled
 }
 
 enum ClaudeKeyType {
@@ -162,6 +163,7 @@ model Task {
   priority          TaskPriority @default(medium)
   status            TaskStatus   @default(pending)
   source            TaskSource   @default(manual)
+  targetBranch      String?      // Target branch for worktree and PR base (defaults to repo.defaultBranch when null)
   agentSessionId    String?
   pullRequestUrl    String?
   pullRequestStatus String?
@@ -309,12 +311,13 @@ model ApiKeyUsage {
 }
 
 model Project {
-  id          String   @id @default(cuid())
-  userId      String
-  name        String
-  description String   @default("")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(cuid())
+  userId        String
+  name          String
+  description   String   @default("")
+  defaultBranch String?  // Project-wide default branch for all tasks (overrides repo.defaultBranch)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   user             User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   repositories     ProjectRepository[]
@@ -328,10 +331,11 @@ model Project {
 }
 
 model ProjectRepository {
-  id           String   @id @default(cuid())
-  projectId    String
-  repositoryId String
-  addedAt      DateTime @default(now())
+  id             String   @id @default(cuid())
+  projectId      String
+  repositoryId   String
+  branchOverride String?  // Per-repo branch override within project (overrides project.defaultBranch)
+  addedAt        DateTime @default(now())
 
   project    Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)

@@ -56,6 +56,7 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
                 id: true,
                 fullName: true,
                 provider: true,
+                defaultBranch: true,
                 status: true,
                 lastScannedAt: true,
                 isActive: true,
@@ -73,13 +74,24 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
       },
     });
     if (!project) return reply.code(404).send({ error: { message: "Project not found" } });
+
+    // Compute effective branch for each repo in the project
+    const repos = project.repositories.map((pr) => {
+      // Priority: branchOverride > project.defaultBranch > repo.defaultBranch
+      const effectiveBranch = pr.branchOverride || project.defaultBranch || pr.repository.defaultBranch;
+      return {
+        ...pr.repository,
+        projectRepoId: pr.id,
+        branchOverride: pr.branchOverride,
+        effectiveBranch,
+        addedAt: pr.addedAt,
+      };
+    });
+
     return {
       data: {
         ...project,
-        repos: project.repositories.map((pr) => ({
-          ...pr.repository,
-          addedAt: pr.addedAt,
-        })),
+        repos,
         repoCount: project._count.repositories,
         docCount: project._count.documents,
         taskCount: project._count.tasks,
@@ -90,7 +102,7 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
   });
 
   // Update project
-  app.patch<{ Params: { id: string }; Body: { name?: string; description?: string } }>(
+  app.patch<{ Params: { id: string }; Body: { name?: string; description?: string; defaultBranch?: string | null } }>(
     "/:id",
     async (request, reply) => {
       const project = await prisma.project.findFirst({
@@ -101,6 +113,7 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
       const data: any = {};
       if (request.body.name !== undefined) data.name = request.body.name.trim();
       if (request.body.description !== undefined) data.description = request.body.description.trim();
+      if (request.body.defaultBranch !== undefined) data.defaultBranch = request.body.defaultBranch || null;
 
       const updated = await prisma.project.update({
         where: { id: project.id },
@@ -235,6 +248,45 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
         data: { projectId: project.id, repositoryId: repo.id },
       });
       return reply.code(201).send({ data: pr });
+    }
+  );
+
+  // Update project repo (branch override)
+  app.patch<{ Params: { id: string; repoId: string }; Body: { branchOverride?: string | null } }>(
+    "/:id/repos/:repoId",
+    async (request, reply) => {
+      const project = await prisma.project.findFirst({
+        where: { id: request.params.id, userId: request.userId },
+      });
+      if (!project) return reply.code(404).send({ error: { message: "Project not found" } });
+
+      const pr = await prisma.projectRepository.findUnique({
+        where: { projectId_repositoryId: { projectId: project.id, repositoryId: request.params.repoId } },
+      });
+      if (!pr) return reply.code(404).send({ error: { message: "Repository not in project" } });
+
+      const updated = await prisma.projectRepository.update({
+        where: { id: pr.id },
+        data: { branchOverride: request.body.branchOverride || null },
+        include: {
+          repository: {
+            select: { id: true, fullName: true, provider: true, defaultBranch: true },
+          },
+        },
+      });
+
+      // Compute effective branch
+      const effectiveBranch = updated.branchOverride || project.defaultBranch || updated.repository.defaultBranch;
+
+      return {
+        data: {
+          ...updated.repository,
+          projectRepoId: updated.id,
+          branchOverride: updated.branchOverride,
+          effectiveBranch,
+          addedAt: updated.addedAt,
+        },
+      };
     }
   );
 
