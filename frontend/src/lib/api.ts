@@ -27,7 +27,11 @@ export const api = {
     update: (id: string, body: any) =>
       request<any>(`/repos/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     delete: (id: string) => request<any>(`/repos/${id}`, { method: "DELETE" }),
-    scan: (id: string) => request<any>(`/repos/${id}/scan`, { method: "POST" }),
+    scan: (id: string, projectId?: string) =>
+      request<any>(`/repos/${id}/scan`, {
+        method: "POST",
+        body: projectId ? JSON.stringify({ projectId }) : undefined,
+      }),
     scans: (id: string) => request<any[]>(`/repos/${id}/scans`),
     stats: (id: string) => request<any>(`/repos/${id}/stats`),
   },
@@ -41,6 +45,29 @@ export const api = {
     update: (id: string, body: any) =>
       request<any>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     delete: (id: string) => request<any>(`/tasks/${id}`, { method: "DELETE" }),
+  },
+  projects: {
+    list: () => request<any[]>("/projects"),
+    get: (id: string) => request<any>(`/projects/${id}`),
+    create: (body: { name: string; description?: string }) =>
+      request<any>("/projects", { method: "POST", body: JSON.stringify(body) }),
+    update: (id: string, body: { name?: string; description?: string }) =>
+      request<any>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    delete: (id: string) => request<any>(`/projects/${id}`, { method: "DELETE" }),
+    stats: (id: string) => request<any>(`/projects/${id}/stats`),
+    addRepo: (id: string, repositoryId: string) =>
+      request<any>(`/projects/${id}/repos`, { method: "POST", body: JSON.stringify({ repositoryId }) }),
+    removeRepo: (id: string, repoId: string) =>
+      request<any>(`/projects/${id}/repos/${repoId}`, { method: "DELETE" }),
+    documents: {
+      list: (id: string) => request<any[]>(`/projects/${id}/documents`),
+      create: (id: string, body: { title: string; content?: string }) =>
+        request<any>(`/projects/${id}/documents`, { method: "POST", body: JSON.stringify(body) }),
+      update: (id: string, docId: string, body: { title?: string; content?: string; sortOrder?: number }) =>
+        request<any>(`/projects/${id}/documents/${docId}`, { method: "PATCH", body: JSON.stringify(body) }),
+      delete: (id: string, docId: string) =>
+        request<any>(`/projects/${id}/documents/${docId}`, { method: "DELETE" }),
+    },
   },
   scans: {
     list: () => request<any[]>("/scans"),

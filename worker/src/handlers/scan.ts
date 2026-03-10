@@ -4,6 +4,7 @@ import { prisma } from "../db.js";
 import { cloneOrPullRepo } from "../services/repo-manager.js";
 import { config } from "../config.js";
 import { decrypt, estimateCost } from "@autosoftware/shared";
+import { getProjectContext } from "../services/project-context.js";
 
 interface ScanTask {
   title: string;
@@ -30,9 +31,9 @@ async function resolveApiKey(userId: string): Promise<{ key: string; apiKeyId: s
   return { key: config.anthropicApiKey, apiKeyId: null };
 }
 
-export async function handleRepoScan(jobs: { data: { repoId: string } }[]) {
+export async function handleRepoScan(jobs: { data: { repoId: string; projectId?: string } }[]) {
   const job = jobs[0];
-  const { repoId } = job.data;
+  const { repoId, projectId } = job.data;
   console.log(`Starting scan for repo ${repoId}`);
 
   let repo: any;
@@ -105,10 +106,12 @@ export async function handleRepoScan(jobs: { data: { repoId: string } }[]) {
       repo.provider
     );
 
+    const projectContext = await getProjectContext(repoId, projectId);
+
     let analysisText = "";
 
     for await (const message of query({
-      prompt: `You are a senior software engineer performing a code review and analysis of this repository.
+      prompt: `${projectContext ? projectContext + "\n---\n\n" : ""}You are a senior software engineer performing a code review and analysis of this repository.
 
 Analyze the codebase thoroughly and identify actionable improvements. Look for:
 1. **Security vulnerabilities** - SQL injection, XSS, hardcoded secrets, insecure dependencies

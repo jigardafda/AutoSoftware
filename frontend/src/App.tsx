@@ -14,6 +14,8 @@ import { Scans } from "./pages/Scans";
 import { Activity } from "./pages/Activity";
 import { Queues } from "./pages/Queues";
 import { RepoDetail } from "./pages/RepoDetail";
+import { Projects } from "./pages/Projects";
+import { ProjectDetail } from "./pages/ProjectDetail";
 import { CommandPalette } from "./components/CommandPalette";
 import { Toaster } from "./components/ui/sonner";
 
@@ -41,6 +43,8 @@ function AppRoutes() {
         <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <Login />} />
         <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/projects" element={<Projects />} />
+          <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/repos" element={<Repos />} />
           <Route path="/repos/:id" element={<RepoDetail />} />
           <Route path="/tasks" element={<Tasks />} />

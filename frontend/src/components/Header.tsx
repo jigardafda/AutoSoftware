@@ -12,6 +12,7 @@ import {
   Activity,
   Layers,
   MessageSquare,
+  FolderKanban,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -42,6 +43,7 @@ import {
 
 const routeTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
+  "/projects": "Projects",
   "/repos": "Repositories",
   "/tasks": "Tasks",
   "/scans": "Scans",
@@ -52,6 +54,7 @@ const routeTitles: Record<string, string> = {
 
 const mobileNavItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/repos", label: "Repositories", icon: GitBranch },
   { to: "/tasks", label: "Tasks", icon: CheckCircle2 },
   { to: "/scans", label: "Scans", icon: Search },

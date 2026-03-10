@@ -41,8 +41,8 @@ export const schedulerService = {
     // Jobs with singletonKey will naturally not be re-queued if repo is deactivated
   },
 
-  async triggerScan(repoId: string) {
-    await boss.send(JOB_NAMES.REPO_SCAN, { repoId }, {
+  async triggerScan(repoId: string, projectId?: string) {
+    await boss.send(JOB_NAMES.REPO_SCAN, { repoId, projectId }, {
       retryLimit: 3,
       retryBackoff: true,
       expireInMinutes: 30,

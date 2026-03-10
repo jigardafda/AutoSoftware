@@ -92,13 +92,13 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
     return { data: { success: true } };
   });
 
-  app.post<{ Params: { id: string } }>("/:id/scan", async (request, reply) => {
+  app.post<{ Params: { id: string }; Body: { projectId?: string } }>("/:id/scan", async (request, reply) => {
     const repo = await prisma.repository.findFirst({
       where: { id: request.params.id, userId: request.userId },
     });
     if (!repo) return reply.code(404).send({ error: { message: "Repo not found" } });
 
-    await schedulerService.triggerScan(repo.id);
+    await schedulerService.triggerScan(repo.id, request.body?.projectId);
     return { data: { queued: true } };
   });
 

@@ -10,6 +10,7 @@ import {
   Layers,
   Settings,
   LogOut,
+  FolderKanban,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -70,6 +71,16 @@ export function MobileNav() {
             <SheetTitle>More</SheetTitle>
           </SheetHeader>
           <div className="mt-4 flex flex-col gap-1">
+            <button
+              onClick={() => {
+                navigate("/projects");
+                setMoreOpen(false);
+              }}
+              className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent/50"
+            >
+              <FolderKanban className="h-4 w-4" />
+              Projects
+            </button>
             <button
               onClick={() => {
                 navigate("/scans");

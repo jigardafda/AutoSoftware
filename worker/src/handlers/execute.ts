@@ -5,6 +5,7 @@ import { cloneOrPullRepo, createWorktree, cleanupWorktree } from "../services/re
 import { createPullRequest } from "./pr-creator.js";
 import { config } from "../config.js";
 import { decrypt } from "@autosoftware/shared";
+import { getProjectContext } from "../services/project-context.js";
 
 async function resolveApiKey(userId: string): Promise<{ key: string; apiKeyId: string | null }> {
   if (config.apiKeyEncryptionSecret) {
@@ -90,11 +91,13 @@ export async function handleTaskExecution(jobs: { data: { taskId: string } }[]) 
     repoDir = await cloneOrPullRepo(repo.id, repo.cloneUrl, account.accessToken, repo.provider);
     worktreeDir = await createWorktree(repoDir, branchName);
 
+    const projectContext = await getProjectContext(repo.id, task.projectId);
+
     let resultText = "";
     let sessionId: string | undefined;
 
     for await (const message of query({
-      prompt: `You are an expert software engineer. Implement the following task:
+      prompt: `${projectContext ? projectContext + "\n---\n\n" : ""}You are an expert software engineer. Implement the following task:
 
 ## Task: ${task.title}
 

@@ -12,6 +12,7 @@ import {
   ChevronRight,
   LogOut,
   User,
+  FolderKanban,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -35,6 +36,7 @@ import {
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/repos", label: "Repositories", icon: GitBranch },
   { to: "/tasks", label: "Tasks", icon: CheckCircle2 },
   { to: "/scans", label: "Scans", icon: Search },

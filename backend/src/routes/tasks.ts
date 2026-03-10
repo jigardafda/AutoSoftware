@@ -45,8 +45,8 @@ export const taskRoutes: FastifyPluginAsync = async (app) => {
     return { data: { ...task, repositoryName: task.repository.fullName } };
   });
 
-  app.post<{ Body: CreateTaskInput }>("/", async (request, reply) => {
-    const { repositoryId, title, description, type, priority } = request.body;
+  app.post<{ Body: CreateTaskInput & { projectId?: string } }>("/", async (request, reply) => {
+    const { repositoryId, title, description, type, priority, projectId } = request.body;
 
     const repo = await prisma.repository.findFirst({
       where: { id: repositoryId, userId: request.userId },
@@ -62,6 +62,7 @@ export const taskRoutes: FastifyPluginAsync = async (app) => {
         type,
         priority,
         source: "manual",
+        projectId: projectId || null,
       },
     });
 
