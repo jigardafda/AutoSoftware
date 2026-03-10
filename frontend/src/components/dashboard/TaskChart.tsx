@@ -59,20 +59,20 @@ export function TaskChart({ tasks }: TaskChartProps) {
             <AreaChart data={data}>
               <defs>
                 <linearGradient id="taskFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="oklch(0.65 0.18 265)" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="oklch(0.65 0.18 265)" stopOpacity={0} />
+                  <stop offset="5%" stopColor="oklch(0.65 0.18 195)" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="oklch(0.65 0.18 195)" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.3 0.01 286)" />
+              <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.01 250)" />
               <XAxis
                 dataKey="date"
-                tick={{ fontSize: 11, fill: "oklch(0.556 0.016 286)" }}
+                tick={{ fontSize: 11, fill: "oklch(0.55 0.01 250)" }}
                 tickLine={false}
                 axisLine={false}
                 interval="preserveStartEnd"
               />
               <YAxis
-                tick={{ fontSize: 11, fill: "oklch(0.556 0.016 286)" }}
+                tick={{ fontSize: 11, fill: "oklch(0.55 0.01 250)" }}
                 tickLine={false}
                 axisLine={false}
                 allowDecimals={false}
@@ -80,17 +80,17 @@ export function TaskChart({ tasks }: TaskChartProps) {
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "oklch(0.17 0.005 286)",
-                  border: "1px solid oklch(0.275 0.015 286)",
-                  borderRadius: "8px",
+                  backgroundColor: "oklch(0.15 0.01 250)",
+                  border: "1px solid oklch(0.25 0.015 250)",
+                  borderRadius: "10px",
                   fontSize: 12,
-                  color: "oklch(0.985 0 0)",
+                  color: "oklch(0.95 0 0)",
                 }}
               />
               <Area
                 type="monotone"
                 dataKey="count"
-                stroke="oklch(0.65 0.18 265)"
+                stroke="oklch(0.65 0.18 195)"
                 fill="url(#taskFill)"
                 strokeWidth={2}
               />

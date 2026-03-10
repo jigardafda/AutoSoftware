@@ -200,20 +200,35 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
     const totalCost = taskCost + scanCost;
     const totalRequests = taskRequests + scanRequests;
 
-    // Daily cost aggregation from tasks and scans
-    const dailyCost = new Map<string, number>();
+    // Daily aggregation from tasks and scans (cost + tokens)
+    const dailyData = new Map<string, { cost: number; inputTokens: number; outputTokens: number }>();
     for (const t of tasks) {
-      if (t.estimatedCostUsd > 0) {
+      if (t.estimatedCostUsd > 0 || t.inputTokens > 0 || t.outputTokens > 0) {
         const day = t.createdAt.toISOString().slice(0, 10);
-        dailyCost.set(day, (dailyCost.get(day) || 0) + t.estimatedCostUsd);
+        const existing = dailyData.get(day) || { cost: 0, inputTokens: 0, outputTokens: 0 };
+        dailyData.set(day, {
+          cost: existing.cost + t.estimatedCostUsd,
+          inputTokens: existing.inputTokens + t.inputTokens,
+          outputTokens: existing.outputTokens + t.outputTokens,
+        });
       }
     }
     for (const sc of scans) {
-      if (sc.estimatedCostUsd > 0) {
+      if (sc.estimatedCostUsd > 0 || sc.inputTokens > 0 || sc.outputTokens > 0) {
         const day = sc.scannedAt.toISOString().slice(0, 10);
-        dailyCost.set(day, (dailyCost.get(day) || 0) + sc.estimatedCostUsd);
+        const existing = dailyData.get(day) || { cost: 0, inputTokens: 0, outputTokens: 0 };
+        dailyData.set(day, {
+          cost: existing.cost + sc.estimatedCostUsd,
+          inputTokens: existing.inputTokens + sc.inputTokens,
+          outputTokens: existing.outputTokens + sc.outputTokens,
+        });
       }
     }
+
+    // Sort by date
+    const dailySorted = Array.from(dailyData.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, data]) => ({ date, ...data }));
 
     return {
       data: {
@@ -228,7 +243,7 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
           totalOutputTokens,
           totalCost,
           totalRequests,
-          daily: Array.from(dailyCost.entries()).map(([date, cost]) => ({ date, cost })),
+          daily: dailySorted,
         },
       },
     };

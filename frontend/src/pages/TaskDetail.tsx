@@ -31,6 +31,8 @@ import {
   Timer,
   DollarSign,
   Activity,
+  Ban,
+  Play,
 } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 import { PlanningQuestionsCard } from "@/components/tasks/PlanningQuestionsCard";
@@ -539,6 +541,15 @@ export function TaskDetail() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const executeMutation = useMutation({
+    mutationFn: () => api.tasks.execute(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["task", id] });
+      toast.success("Execution started");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const retryMutation = useMutation({
     mutationFn: () => api.tasks.retry(id!),
     onSuccess: () => {
@@ -546,6 +557,16 @@ export function TaskDetail() {
       setLogs([]); // Clear old logs
       setLastLogTime(null);
       toast.success("Task queued for retry");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: () => api.tasks.cancel(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["task", id] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      toast.success("Task cancelled");
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -705,6 +726,30 @@ export function TaskDetail() {
             >
               {planMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <BrainCircuit className="h-4 w-4" />}
               {task.status === "planned" ? "Re-plan" : "Start Planning"}
+            </Button>
+          )}
+          {task.status === "planned" && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => executeMutation.mutate()}
+              disabled={executeMutation.isPending}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              {executeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+              Start Execution
+            </Button>
+          )}
+          {["pending", "planning", "in_progress", "awaiting_input", "planned"].includes(task.status) && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => cancelMutation.mutate()}
+              disabled={cancelMutation.isPending}
+              className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-orange-950/20"
+            >
+              {cancelMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />}
+              Cancel
             </Button>
           )}
           <ConfirmDeleteDialog

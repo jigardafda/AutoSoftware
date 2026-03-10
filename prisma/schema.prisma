@@ -105,6 +105,7 @@ model User {
   email     String   @unique
   name      String?
   avatarUrl String?
+  settings  Json     @default("{}")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

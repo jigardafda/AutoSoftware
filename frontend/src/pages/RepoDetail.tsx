@@ -18,6 +18,7 @@ import {
   Loader2,
   Ban,
   ExternalLink,
+  MessageSquare,
   ChevronDown,
   ChevronRight,
   RotateCcw,
@@ -70,6 +71,7 @@ import {
   Cell,
   PieChart,
   Pie,
+  Legend,
 } from "recharts";
 
 function relativeTime(dateStr: string | null): string {
@@ -146,6 +148,9 @@ const STATUS_ICON: Record<string, { icon: React.ElementType; className: string }
   completed: { icon: CheckCircle2, className: "text-green-500" },
   failed: { icon: XCircle, className: "text-red-500" },
   cancelled: { icon: Ban, className: "text-muted-foreground" },
+  planning: { icon: Loader2, className: "text-amber-500 animate-spin" },
+  awaiting_input: { icon: MessageSquare, className: "text-amber-600" },
+  planned: { icon: CheckCircle2, className: "text-cyan-500" },
 };
 
 const TYPE_COLOR: Record<string, string> = {
@@ -1044,24 +1049,72 @@ export function RepoDetail() {
           </div>
 
           {usage.daily.length > 0 ? (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Daily Cost</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="h-48">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={usage.daily}>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                      <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(d) => d.slice(5)} />
-                      <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `$${v.toFixed(2)}`} />
-                      <Tooltip formatter={(value) => [`$${Number(value).toFixed(4)}`, "Cost"]} />
-                      <Area type="monotone" dataKey="cost" stroke="var(--primary)" fill="var(--primary)" fillOpacity={0.1} strokeWidth={2} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Daily Cost</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-48">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={usage.daily}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(d) => d.slice(5)} />
+                        <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `$${v.toFixed(2)}`} />
+                        <Tooltip formatter={(value) => [`$${Number(value).toFixed(4)}`, "Cost"]} />
+                        <Area type="monotone" dataKey="cost" stroke="var(--primary)" fill="var(--primary)" fillOpacity={0.1} strokeWidth={2} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Daily Token Usage</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-48">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={usage.daily}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                        <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(d) => d.slice(5)} />
+                        <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}K` : v} />
+                        <Tooltip
+                          formatter={(value, name) => [
+                            Number(value) >= 1000 ? `${(Number(value) / 1000).toFixed(1)}K` : value,
+                            name === "inputTokens" ? "Input" : "Output"
+                          ]}
+                        />
+                        <Legend
+                          verticalAlign="top"
+                          height={24}
+                          formatter={(value) => value === "inputTokens" ? "Input Tokens" : "Output Tokens"}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="inputTokens"
+                          stroke="oklch(0.65 0.18 195)"
+                          fill="oklch(0.65 0.18 195)"
+                          fillOpacity={0.15}
+                          strokeWidth={2}
+                          stackId="1"
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="outputTokens"
+                          stroke="oklch(0.60 0.18 280)"
+                          fill="oklch(0.60 0.18 280)"
+                          fillOpacity={0.15}
+                          strokeWidth={2}
+                          stackId="1"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           ) : (
             <Card>
               <CardContent className="py-8 text-center text-sm text-muted-foreground">

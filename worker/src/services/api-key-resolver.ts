@@ -12,15 +12,16 @@ export interface ResolvedAuth {
 
 /**
  * Resolve authentication for Claude API calls.
- * Priority: OAuth token (env) > User's stored key/token (DB) > API key (env)
+ * Priority: User's stored key/token (DB) > OAuth token (env) > API key (env)
+ *
+ * User's DB-stored keys take priority because:
+ * 1. User explicitly added them via UI, expecting them to be used
+ * 2. Usage tracking only works with DB-stored keys (apiKeyId is set)
+ * 3. Env-based tokens are fallbacks when user hasn't configured their own
  */
 export async function resolveAuth(userId: string): Promise<ResolvedAuth> {
-  // 1. Check for OAuth token (uses Claude Max subscription - FREE!)
-  if (config.claudeOauthToken) {
-    return { key: config.claudeOauthToken, apiKeyId: null, authType: "oauth" };
-  }
-
-  // 2. Check for user's stored API key or OAuth token in database
+  // 1. Check for user's stored API key or OAuth token in database (PRIORITY)
+  // This allows usage tracking and respects user's explicit configuration
   if (config.apiKeyEncryptionSecret) {
     const dbKey = await prisma.apiKey.findFirst({
       where: { userId, isActive: true },
@@ -32,13 +33,19 @@ export async function resolveAuth(userId: string): Promise<ResolvedAuth> {
         // Use the stored keyType to determine auth type
         const authType: AuthType = dbKey.keyType === "oauth_token" ? "oauth" : "api_key";
         return { key: plainKey, apiKeyId: dbKey.id, authType };
-      } catch {
-        // Decryption failed, fall through
+      } catch (err) {
+        console.error(`Failed to decrypt API key ${dbKey.id}:`, err);
+        // Decryption failed, fall through to env-based auth
       }
     }
   }
 
-  // 3. Fall back to env API key
+  // 2. Fall back to OAuth token from env (no usage tracking)
+  if (config.claudeOauthToken) {
+    return { key: config.claudeOauthToken, apiKeyId: null, authType: "oauth" };
+  }
+
+  // 3. Fall back to API key from env (no usage tracking)
   return { key: config.anthropicApiKey, apiKeyId: null, authType: "api_key" };
 }
 

@@ -138,13 +138,13 @@ export function Repos() {
           <h2 className="text-2xl font-bold">Repositories</h2>
           <RefreshButton queryKeys={["repos"]} />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {/* View toggle */}
-          <div className="flex items-center border rounded-md">
+          <div className="flex items-center border border-border/50 rounded-lg bg-muted/30 p-0.5">
             <Button
               variant={viewMode === "table" ? "secondary" : "ghost"}
               size="icon"
-              className={cn("h-8 w-8 rounded-r-none")}
+              className={cn("h-8 w-8 rounded-md", viewMode === "table" && "shadow-sm")}
               onClick={() => setViewMode("table")}
             >
               <List className="h-4 w-4" />
@@ -153,7 +153,7 @@ export function Repos() {
             <Button
               variant={viewMode === "grid" ? "secondary" : "ghost"}
               size="icon"
-              className={cn("h-8 w-8 rounded-l-none")}
+              className={cn("h-8 w-8 rounded-md", viewMode === "grid" && "shadow-sm")}
               onClick={() => setViewMode("grid")}
             >
               <LayoutGrid className="h-4 w-4" />

@@ -87,6 +87,8 @@ export const api = {
       }),
     retry: (id: string) =>
       request<{ success: boolean }>(`/tasks/${id}/retry`, { method: "POST" }),
+    cancel: (id: string) =>
+      request<{ success: boolean }>(`/tasks/${id}/cancel`, { method: "POST" }),
     bulkRetry: (ids: string[]) =>
       request<{ retried: number }>("/tasks/bulk-retry", {
         method: "POST",
@@ -94,6 +96,13 @@ export const api = {
       }),
     bulkPlan: (ids: string[]) =>
       request<{ planned: number }>("/tasks/bulk-plan", {
+        method: "POST",
+        body: JSON.stringify({ ids }),
+      }),
+    execute: (id: string) =>
+      request<{ success: boolean }>(`/tasks/${id}/execute`, { method: "POST" }),
+    bulkExecute: (ids: string[]) =>
+      request<{ executed: number }>("/tasks/bulk-execute", {
         method: "POST",
         body: JSON.stringify({ ids }),
       }),
@@ -213,5 +222,18 @@ export const api = {
       const qs = days ? `?days=${days}` : "";
       return request<any>(`/api-keys/${id}/usage${qs}`);
     },
+  },
+  settings: {
+    get: () => request<{ scanBudget: number; taskBudget: number; planBudget: number }>("/settings"),
+    update: (body: { scanBudget?: number; taskBudget?: number; planBudget?: number }) =>
+      request<{ scanBudget: number; taskBudget: number; planBudget: number }>("/settings", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    usage: () =>
+      request<{
+        totals: { inputTokens: number; outputTokens: number; cost: number; tasks: number; scans: number };
+        daily: { date: string; cost: number; inputTokens: number; outputTokens: number; taskCount: number; scanCount: number }[];
+      }>("/settings/usage"),
   },
 };

@@ -20,6 +20,9 @@ import {
   ChevronRight,
   Loader2,
   AlertCircle,
+  Pencil,
+  Save,
+  BarChart3,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -54,7 +57,9 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  Legend,
 } from "recharts";
+import { Input } from "@/components/ui/input";
 
 function getInitials(name: string | null | undefined): string {
   if (!name) return "?";
@@ -349,6 +354,23 @@ function KeyUsageDetail({ keyId }: { keyId: string }) {
   );
 }
 
+interface BudgetSettings {
+  scanBudget: number;
+  taskBudget: number;
+  planBudget: number;
+}
+
+interface GlobalUsageData {
+  totals: {
+    inputTokens: number;
+    outputTokens: number;
+    cost: number;
+    tasks: number;
+    scans: number;
+  };
+  daily: { date: string; cost: number; inputTokens: number; outputTokens: number; taskCount: number; scanCount: number }[];
+}
+
 function ApiTab() {
   const [keys, setKeys] = useState<ApiKeyItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -357,6 +379,18 @@ function ApiTab() {
   const [deleting, setDeleting] = useState(false);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [reordering, setReordering] = useState(false);
+
+  // Budget settings state
+  const [budgets, setBudgets] = useState<BudgetSettings>({ scanBudget: 2.0, taskBudget: 10.0, planBudget: 1.0 });
+  const [budgetsLoading, setBudgetsLoading] = useState(true);
+  const [editingBudget, setEditingBudget] = useState<keyof BudgetSettings | null>(null);
+  const [budgetInputs, setBudgetInputs] = useState<BudgetSettings>({ scanBudget: 2.0, taskBudget: 10.0, planBudget: 1.0 });
+  const [savingBudget, setSavingBudget] = useState(false);
+
+  // Global usage stats
+  const [globalUsage, setGlobalUsage] = useState<GlobalUsageData | null>(null);
+  const [usageLoading, setUsageLoading] = useState(true);
+  const [selectedMetric, setSelectedMetric] = useState<"cost" | "tokens" | "tasks" | "scans">("cost");
 
   const fetchKeys = useCallback(async () => {
     try {
@@ -368,6 +402,41 @@ function ApiTab() {
       setLoading(false);
     }
   }, []);
+
+  // Fetch budget settings
+  useEffect(() => {
+    api.settings.get()
+      .then((data) => {
+        setBudgets(data);
+        setBudgetInputs(data);
+      })
+      .catch(() => {})
+      .finally(() => setBudgetsLoading(false));
+  }, []);
+
+  // Fetch global usage
+  useEffect(() => {
+    api.settings.usage()
+      .then(setGlobalUsage)
+      .catch(() => {})
+      .finally(() => setUsageLoading(false));
+  }, []);
+
+  const handleSaveBudget = async (key: keyof BudgetSettings) => {
+    setSavingBudget(true);
+    try {
+      const value = budgetInputs[key];
+      const updated = await api.settings.update({ [key]: value });
+      setBudgets(updated);
+      setBudgetInputs(updated);
+      setEditingBudget(null);
+      toast.success("Budget updated");
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSavingBudget(false);
+    }
+  };
 
   useEffect(() => {
     fetchKeys();
@@ -635,22 +704,377 @@ function ApiTab() {
             Usage Budgets
           </CardTitle>
           <CardDescription>
-            Maximum spend limits per operation.
+            Maximum spend limits per operation. Click to edit.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="rounded-lg border bg-muted/30 p-4">
-              <p className="text-sm text-muted-foreground mb-1">Scan Budget</p>
-              <p className="text-2xl font-semibold">$2.00</p>
-              <p className="text-xs text-muted-foreground mt-1">per scan</p>
+          {budgetsLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-24 w-full" />
+              ))}
             </div>
-            <div className="rounded-lg border bg-muted/30 p-4">
-              <p className="text-sm text-muted-foreground mb-1">Task Budget</p>
-              <p className="text-2xl font-semibold">$10.00</p>
-              <p className="text-xs text-muted-foreground mt-1">per task</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Scan Budget */}
+              <div className="rounded-lg border bg-muted/30 p-4 relative group">
+                <p className="text-sm text-muted-foreground mb-1">Scan Budget</p>
+                {editingBudget === "scanBudget" ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl font-semibold">$</span>
+                    <Input
+                      type="number"
+                      step="0.5"
+                      min="0.5"
+                      max="100"
+                      value={budgetInputs.scanBudget}
+                      onChange={(e) => setBudgetInputs((p) => ({ ...p, scanBudget: parseFloat(e.target.value) || 0 }))}
+                      className="h-8 w-20 text-lg font-semibold"
+                      autoFocus
+                      onKeyDown={(e) => e.key === "Enter" && handleSaveBudget("scanBudget")}
+                    />
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      onClick={() => handleSaveBudget("scanBudget")}
+                      disabled={savingBudget}
+                    >
+                      {savingBudget ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <p className="text-2xl font-semibold">${budgets.scanBudget.toFixed(2)}</p>
+                    <button
+                      onClick={() => setEditingBudget("scanBudget")}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground mt-1">per scan</p>
+              </div>
+
+              {/* Task Budget */}
+              <div className="rounded-lg border bg-muted/30 p-4 relative group">
+                <p className="text-sm text-muted-foreground mb-1">Task Budget</p>
+                {editingBudget === "taskBudget" ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl font-semibold">$</span>
+                    <Input
+                      type="number"
+                      step="1"
+                      min="1"
+                      max="500"
+                      value={budgetInputs.taskBudget}
+                      onChange={(e) => setBudgetInputs((p) => ({ ...p, taskBudget: parseFloat(e.target.value) || 0 }))}
+                      className="h-8 w-20 text-lg font-semibold"
+                      autoFocus
+                      onKeyDown={(e) => e.key === "Enter" && handleSaveBudget("taskBudget")}
+                    />
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      onClick={() => handleSaveBudget("taskBudget")}
+                      disabled={savingBudget}
+                    >
+                      {savingBudget ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <p className="text-2xl font-semibold">${budgets.taskBudget.toFixed(2)}</p>
+                    <button
+                      onClick={() => setEditingBudget("taskBudget")}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground mt-1">per task execution</p>
+              </div>
+
+              {/* Plan Budget */}
+              <div className="rounded-lg border bg-muted/30 p-4 relative group">
+                <p className="text-sm text-muted-foreground mb-1">Plan Budget</p>
+                {editingBudget === "planBudget" ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl font-semibold">$</span>
+                    <Input
+                      type="number"
+                      step="0.5"
+                      min="0.5"
+                      max="50"
+                      value={budgetInputs.planBudget}
+                      onChange={(e) => setBudgetInputs((p) => ({ ...p, planBudget: parseFloat(e.target.value) || 0 }))}
+                      className="h-8 w-20 text-lg font-semibold"
+                      autoFocus
+                      onKeyDown={(e) => e.key === "Enter" && handleSaveBudget("planBudget")}
+                    />
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      onClick={() => handleSaveBudget("planBudget")}
+                      disabled={savingBudget}
+                    >
+                      {savingBudget ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <p className="text-2xl font-semibold">${budgets.planBudget.toFixed(2)}</p>
+                    <button
+                      onClick={() => setEditingBudget("planBudget")}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground mt-1">per planning phase</p>
+              </div>
             </div>
-          </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Global Usage Graphs */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <BarChart3 className="h-5 w-5" />
+            Usage Analytics
+          </CardTitle>
+          <CardDescription>
+            Click a metric to view its daily trend.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {usageLoading ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[1, 2, 3, 4].map((i) => (
+                  <Skeleton key={i} className="h-20 w-full" />
+                ))}
+              </div>
+              <Skeleton className="h-48 w-full" />
+            </div>
+          ) : !globalUsage ? (
+            <div className="text-center py-8">
+              <BarChart3 className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">No usage data yet.</p>
+              <p className="text-xs text-muted-foreground mt-1">Run some tasks or scans to see usage analytics.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Clickable Metric Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <button
+                  onClick={() => setSelectedMetric("cost")}
+                  className={cn(
+                    "rounded-lg border p-3 text-left transition-all",
+                    selectedMetric === "cost"
+                      ? "border-primary bg-primary/5 ring-1 ring-primary"
+                      : "bg-muted/30 hover:bg-muted/50"
+                  )}
+                >
+                  <p className="text-xs text-muted-foreground mb-1">Total Spend</p>
+                  <p className="text-lg font-semibold">{formatCost(globalUsage.totals.cost)}</p>
+                </button>
+                <button
+                  onClick={() => setSelectedMetric("tokens")}
+                  className={cn(
+                    "rounded-lg border p-3 text-left transition-all",
+                    selectedMetric === "tokens"
+                      ? "border-primary bg-primary/5 ring-1 ring-primary"
+                      : "bg-muted/30 hover:bg-muted/50"
+                  )}
+                >
+                  <p className="text-xs text-muted-foreground mb-1">Total Tokens</p>
+                  <p className="text-lg font-semibold">
+                    {formatTokens(globalUsage.totals.inputTokens + globalUsage.totals.outputTokens)}
+                  </p>
+                </button>
+                <button
+                  onClick={() => setSelectedMetric("tasks")}
+                  className={cn(
+                    "rounded-lg border p-3 text-left transition-all",
+                    selectedMetric === "tasks"
+                      ? "border-primary bg-primary/5 ring-1 ring-primary"
+                      : "bg-muted/30 hover:bg-muted/50"
+                  )}
+                >
+                  <p className="text-xs text-muted-foreground mb-1">Tasks</p>
+                  <p className="text-lg font-semibold">{globalUsage.totals.tasks}</p>
+                </button>
+                <button
+                  onClick={() => setSelectedMetric("scans")}
+                  className={cn(
+                    "rounded-lg border p-3 text-left transition-all",
+                    selectedMetric === "scans"
+                      ? "border-primary bg-primary/5 ring-1 ring-primary"
+                      : "bg-muted/30 hover:bg-muted/50"
+                  )}
+                >
+                  <p className="text-xs text-muted-foreground mb-1">Scans</p>
+                  <p className="text-lg font-semibold">{globalUsage.totals.scans}</p>
+                </button>
+              </div>
+
+              {/* Dynamic Chart based on selected metric */}
+              {globalUsage.daily.length > 0 && (
+                <div className="rounded-lg border bg-muted/10 p-4">
+                  <p className="text-sm font-medium mb-3">
+                    {selectedMetric === "cost" && "Daily Cost"}
+                    {selectedMetric === "tokens" && "Daily Tokens (Input + Output)"}
+                    {selectedMetric === "tasks" && "Daily Task Count"}
+                    {selectedMetric === "scans" && "Daily Scan Count"}
+                  </p>
+                  <div className="h-52">
+                    <ResponsiveContainer width="100%" height="100%">
+                      {selectedMetric === "tokens" ? (
+                        <AreaChart data={globalUsage.daily}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis
+                            dataKey="date"
+                            tick={{ fontSize: 10 }}
+                            tickFormatter={(d) => d.slice(5)}
+                            className="text-muted-foreground"
+                          />
+                          <YAxis
+                            tick={{ fontSize: 10 }}
+                            tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(0)}K` : String(v))}
+                            className="text-muted-foreground"
+                          />
+                          <Tooltip
+                            formatter={(value, name) => [
+                              Number(value) >= 1000 ? `${(Number(value) / 1000).toFixed(1)}K` : value,
+                              name === "inputTokens" ? "Input" : "Output",
+                            ]}
+                            labelFormatter={(label) => String(label)}
+                          />
+                          <Legend
+                            formatter={(value) => (value === "inputTokens" ? "Input Tokens" : "Output Tokens")}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="inputTokens"
+                            stroke="oklch(0.65 0.18 195)"
+                            fill="oklch(0.65 0.18 195)"
+                            fillOpacity={0.15}
+                            strokeWidth={2}
+                            stackId="1"
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="outputTokens"
+                            stroke="oklch(0.60 0.18 280)"
+                            fill="oklch(0.60 0.18 280)"
+                            fillOpacity={0.15}
+                            strokeWidth={2}
+                            stackId="1"
+                          />
+                        </AreaChart>
+                      ) : selectedMetric === "tasks" ? (
+                        <AreaChart data={globalUsage.daily}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis
+                            dataKey="date"
+                            tick={{ fontSize: 10 }}
+                            tickFormatter={(d) => d.slice(5)}
+                            className="text-muted-foreground"
+                          />
+                          <YAxis
+                            tick={{ fontSize: 10 }}
+                            allowDecimals={false}
+                            className="text-muted-foreground"
+                          />
+                          <Tooltip
+                            formatter={(value) => [value, "Tasks"]}
+                            labelFormatter={(label) => String(label)}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="taskCount"
+                            stroke="oklch(0.65 0.18 250)"
+                            fill="oklch(0.65 0.18 250)"
+                            fillOpacity={0.2}
+                            strokeWidth={2}
+                          />
+                        </AreaChart>
+                      ) : selectedMetric === "scans" ? (
+                        <AreaChart data={globalUsage.daily}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis
+                            dataKey="date"
+                            tick={{ fontSize: 10 }}
+                            tickFormatter={(d) => d.slice(5)}
+                            className="text-muted-foreground"
+                          />
+                          <YAxis
+                            tick={{ fontSize: 10 }}
+                            allowDecimals={false}
+                            className="text-muted-foreground"
+                          />
+                          <Tooltip
+                            formatter={(value) => [value, "Scans"]}
+                            labelFormatter={(label) => String(label)}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="scanCount"
+                            stroke="oklch(0.65 0.18 30)"
+                            fill="oklch(0.65 0.18 30)"
+                            fillOpacity={0.2}
+                            strokeWidth={2}
+                          />
+                        </AreaChart>
+                      ) : (
+                        <AreaChart data={globalUsage.daily}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis
+                            dataKey="date"
+                            tick={{ fontSize: 10 }}
+                            tickFormatter={(d) => d.slice(5)}
+                            className="text-muted-foreground"
+                          />
+                          <YAxis
+                            tick={{ fontSize: 10 }}
+                            tickFormatter={(v) => `$${v.toFixed(2)}`}
+                            className="text-muted-foreground"
+                          />
+                          <Tooltip
+                            formatter={(value) => [`$${Number(value).toFixed(4)}`, "Cost"]}
+                            labelFormatter={(label) => String(label)}
+                          />
+                          <Area
+                            type="monotone"
+                            dataKey="cost"
+                            stroke="oklch(0.65 0.18 145)"
+                            fill="oklch(0.65 0.18 145)"
+                            fillOpacity={0.2}
+                            strokeWidth={2}
+                          />
+                        </AreaChart>
+                      )}
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              {globalUsage.daily.length === 0 && (
+                <div className="rounded-lg border bg-muted/10 p-8 text-center">
+                  <BarChart3 className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">No daily data available yet.</p>
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 

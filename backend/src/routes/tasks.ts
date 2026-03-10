@@ -292,6 +292,25 @@ export const taskRoutes: FastifyPluginAsync = async (app) => {
     return { data: { deleted: taskIds.length } };
   });
 
+  // Cancel a running task
+  app.post<{ Params: { id: string } }>("/:id/cancel", async (request, reply) => {
+    const task = await prisma.task.findFirst({
+      where: { id: request.params.id, userId: request.userId },
+    });
+    if (!task) return reply.code(404).send({ error: { message: "Task not found" } });
+
+    if (!["pending", "planning", "in_progress", "awaiting_input", "planned"].includes(task.status)) {
+      return reply.code(400).send({ error: { message: "Only active tasks can be cancelled" } });
+    }
+
+    await prisma.task.update({
+      where: { id: task.id },
+      data: { status: "cancelled" },
+    });
+
+    return { data: { success: true } };
+  });
+
   // Retry a single failed task
   app.post<{ Params: { id: string } }>("/:id/retry", async (request, reply) => {
     const task = await prisma.task.findFirst({
@@ -415,5 +434,52 @@ export const taskRoutes: FastifyPluginAsync = async (app) => {
     }
 
     return { data: { planned: taskIds.length } };
+  });
+
+  // Start execution for a single planned task
+  app.post<{ Params: { id: string } }>("/:id/execute", async (request, reply) => {
+    const task = await prisma.task.findFirst({
+      where: { id: request.params.id, userId: request.userId },
+    });
+    if (!task) return reply.code(404).send({ error: { message: "Task not found" } });
+
+    if (task.status !== "planned") {
+      return reply.code(400).send({ error: { message: "Only planned tasks can be executed" } });
+    }
+
+    await schedulerService.queueTaskExecution(task.id);
+
+    return { data: { success: true } };
+  });
+
+  // Bulk execute planned tasks
+  app.post<{ Body: { ids: string[] } }>("/bulk-execute", async (request, reply) => {
+    const { ids } = request.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return reply.code(400).send({ error: { message: "ids array is required" } });
+    }
+
+    // Verify all tasks belong to the current user and are planned
+    const tasks = await prisma.task.findMany({
+      where: {
+        id: { in: ids },
+        userId: request.userId,
+        status: "planned",
+      },
+      select: { id: true },
+    });
+
+    if (tasks.length === 0) {
+      return reply.code(404).send({ error: { message: "No planned tasks found" } });
+    }
+
+    const taskIds = tasks.map((t) => t.id);
+
+    // Queue each task for execution
+    for (const taskId of taskIds) {
+      await schedulerService.queueTaskExecution(taskId);
+    }
+
+    return { data: { executed: taskIds.length } };
   });
 };

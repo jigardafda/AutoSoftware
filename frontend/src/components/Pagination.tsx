@@ -18,27 +18,27 @@ export function Pagination({ page, total, pageSize = PAGE_SIZE, onPageChange }: 
   const end = Math.min((page + 1) * pageSize, total);
 
   return (
-    <div className="flex items-center justify-between pt-2">
+    <div className="flex items-center justify-between pt-4">
       <span className="text-sm text-muted-foreground">
         {start}-{end} of {total}
       </span>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
-          className="h-8"
+          className="h-8 w-8 p-0"
           disabled={page === 0}
           onClick={() => onPageChange(page - 1)}
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <span className="text-sm min-w-[60px] text-center">
+        <span className="text-sm min-w-[60px] text-center text-muted-foreground">
           {page + 1} / {totalPages}
         </span>
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
-          className="h-8"
+          className="h-8 w-8 p-0"
           disabled={page >= totalPages - 1}
           onClick={() => onPageChange(page + 1)}
         >

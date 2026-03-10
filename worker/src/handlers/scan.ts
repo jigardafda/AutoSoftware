@@ -12,6 +12,20 @@ interface ScanTask {
   priority: "low" | "medium" | "high" | "critical";
 }
 
+interface UserSettings {
+  scanBudget?: number;
+  taskBudget?: number;
+  planBudget?: number;
+}
+
+function getUserBudgets(userSettings: UserSettings | null | undefined) {
+  return {
+    scanBudget: userSettings?.scanBudget ?? config.defaultScanBudget,
+    taskBudget: userSettings?.taskBudget ?? config.defaultTaskBudget,
+    planBudget: userSettings?.planBudget ?? config.defaultPlanBudget,
+  };
+}
+
 async function emitLog(scanResultId: string, level: string, message: string, metadata: Record<string, any> = {}) {
   await prisma.scanLog.create({ data: { scanResultId, level, message, metadata } });
 }
@@ -36,6 +50,7 @@ export async function handleRepoScan(jobs: { data: { repoId: string; projectId?:
       include: {
         user: {
           include: { accounts: true },
+          select: { id: true, settings: true, accounts: true },
         },
       },
     });
@@ -43,6 +58,9 @@ export async function handleRepoScan(jobs: { data: { repoId: string; projectId?:
     console.error(`Failed to fetch repo ${repoId}:`, err);
     return;
   }
+
+  // Get user budget settings
+  const userBudgets = getUserBudgets(repo?.user?.settings as UserSettings);
 
   if (!repo || !repo.isActive) {
     console.log(`Repo ${repoId} not found or inactive, skipping`);
@@ -238,7 +256,7 @@ IMPORTANT: Respond with ONLY a JSON array of tasks:
           allowedTools: ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Agent"],
           permissionMode: "bypassPermissions",
           maxTurns: 25,
-          maxBudgetUsd: config.defaultScanBudget,
+          maxBudgetUsd: userBudgets.scanBudget,
           cwd: repoDir,
         },
       },

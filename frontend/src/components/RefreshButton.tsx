@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface RefreshButtonProps {
-  queryKeys: (string | string[])[];
+  queryKeys: (string | unknown[])[];
   size?: "default" | "sm" | "lg" | "icon";
   variant?: "default" | "outline" | "ghost" | "secondary";
   className?: string;

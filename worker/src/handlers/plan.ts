@@ -20,6 +20,20 @@ async function emitTaskLog(
   });
 }
 
+interface UserSettings {
+  scanBudget?: number;
+  taskBudget?: number;
+  planBudget?: number;
+}
+
+function getUserBudgets(userSettings: UserSettings | null | undefined) {
+  return {
+    scanBudget: userSettings?.scanBudget ?? config.defaultScanBudget,
+    taskBudget: userSettings?.taskBudget ?? config.defaultTaskBudget,
+    planBudget: userSettings?.planBudget ?? config.defaultPlanBudget,
+  };
+}
+
 interface PlanningQuestion {
   questionKey: string;
   label: string;
@@ -51,7 +65,7 @@ export async function handleTaskPlanning(jobs: { data: { taskId: string } }[]) {
     include: {
       repository: {
         include: {
-          user: { include: { accounts: true } },
+          user: { select: { id: true, settings: true, accounts: true } },
         },
       },
       planningQuestions: {
@@ -66,6 +80,7 @@ export async function handleTaskPlanning(jobs: { data: { taskId: string } }[]) {
   }
 
   const repo = task.repository;
+  const userBudgets = getUserBudgets(repo.user?.settings as UserSettings);
 
   // Resolve authentication (OAuth token or API key)
   const auth = await resolveAuth(repo.userId);
@@ -201,7 +216,7 @@ The \`affectedFiles\` array MUST list every file that will likely be created, mo
           allowedTools: ["Read", "Glob", "Grep", "Bash"],
           permissionMode: "bypassPermissions",
           maxTurns: 20,
-          maxBudgetUsd: config.defaultPlanBudget,
+          maxBudgetUsd: userBudgets.planBudget,
           cwd: repoDir,
         },
       },

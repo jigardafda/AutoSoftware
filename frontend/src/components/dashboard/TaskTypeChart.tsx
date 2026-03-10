@@ -10,11 +10,11 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
 const TYPE_COLORS: Record<string, string> = {
-  improvement: "oklch(0.6 0.18 250)",
-  bugfix: "oklch(0.6 0.22 25)",
-  feature: "oklch(0.6 0.18 145)",
-  refactor: "oklch(0.7 0.15 85)",
-  security: "oklch(0.6 0.18 300)",
+  improvement: "oklch(0.65 0.18 195)",  // Teal - primary
+  bugfix: "oklch(0.60 0.22 25)",        // Red
+  feature: "oklch(0.65 0.18 145)",      // Green
+  refactor: "oklch(0.70 0.15 85)",      // Yellow
+  security: "oklch(0.60 0.18 290)",     // Purple
 };
 
 interface TaskTypeChartProps {
@@ -65,11 +65,11 @@ export function TaskTypeChart({ tasks }: TaskTypeChartProps) {
               </Pie>
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "oklch(0.17 0.005 286)",
-                  border: "1px solid oklch(0.275 0.015 286)",
-                  borderRadius: "8px",
+                  backgroundColor: "oklch(0.15 0.01 250)",
+                  border: "1px solid oklch(0.25 0.015 250)",
+                  borderRadius: "10px",
                   fontSize: 12,
-                  color: "oklch(0.985 0 0)",
+                  color: "oklch(0.95 0 0)",
                 }}
               />
               <Legend

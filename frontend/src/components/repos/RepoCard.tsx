@@ -64,7 +64,7 @@ interface RepoCardProps {
 export function RepoCard({ repo, onScan, onToggle, onClick }: RepoCardProps) {
   return (
     <Card
-      className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+      className="group p-4 cursor-pointer hover:bg-muted/30 hover:shadow-md hover:border-border/80 transition-all duration-200"
       onClick={() => onClick(repo)}
     >
       <div className="flex items-start justify-between gap-2 mb-3">

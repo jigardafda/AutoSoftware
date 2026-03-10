@@ -7,6 +7,20 @@ import { getProjectContext } from "../services/project-context.js";
 import { resolveAuth, setupAgentSdkAuth, isValidAuth } from "../services/api-key-resolver.js";
 import { agentQueryWithUsage } from "../services/claude-query.js";
 
+interface UserSettings {
+  scanBudget?: number;
+  taskBudget?: number;
+  planBudget?: number;
+}
+
+function getUserBudgets(userSettings: UserSettings | null | undefined) {
+  return {
+    scanBudget: userSettings?.scanBudget ?? config.defaultScanBudget,
+    taskBudget: userSettings?.taskBudget ?? config.defaultTaskBudget,
+    planBudget: userSettings?.planBudget ?? config.defaultPlanBudget,
+  };
+}
+
 async function emitTaskLog(
   taskId: string,
   phase: string,
@@ -29,7 +43,7 @@ export async function handleTaskExecution(jobs: { data: { taskId: string } }[]) 
     include: {
       repository: {
         include: {
-          user: { include: { accounts: true } },
+          user: { select: { id: true, settings: true, accounts: true } },
         },
       },
     },
@@ -41,6 +55,7 @@ export async function handleTaskExecution(jobs: { data: { taskId: string } }[]) 
   }
 
   const repo = task.repository;
+  const userBudgets = getUserBudgets(repo.user?.settings as UserSettings);
 
   // Resolve authentication (OAuth token or API key)
   const auth = await resolveAuth(repo.userId);
@@ -127,7 +142,7 @@ ${implementationInstructions}
           ],
           permissionMode: "bypassPermissions",
           maxTurns: 60,
-          maxBudgetUsd: config.defaultTaskBudget,
+          maxBudgetUsd: userBudgets.taskBudget,
           cwd: worktreeDir,
         },
       },
