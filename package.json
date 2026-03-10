@@ -14,7 +14,7 @@
     "dev:frontend": "npm run dev -w frontend",
     "db:migrate": "npx prisma migrate dev",
     "db:generate": "npx prisma generate",
-    "build": "npm run build -w packages/shared && npm run build -w backend && npm run build -w worker",
+    "build": "npm run build -w packages/shared && npm run build -w backend && npm run build -w worker && npm run build -w frontend",
     "typecheck": "npm run build -w packages/shared && concurrently -n shared,backend,worker,frontend -c cyan,blue,magenta,green \"npx tsc --noEmit -p packages/shared/tsconfig.json\" \"npx tsc --noEmit -p backend/tsconfig.json\" \"npx tsc --noEmit -p worker/tsconfig.json\" \"npx tsc --noEmit -p frontend/tsconfig.app.json\""
   },
   "devDependencies": {

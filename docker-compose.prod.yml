@@ -1,0 +1,59 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: autosoftware
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    build:
+      context: .
+      target: prisma
+    command: npx prisma migrate deploy
+    env_file: .env.docker
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: .
+      target: backend
+    ports:
+      - "6002:5002"
+    env_file: .env.docker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: .
+      target: worker
+    env_file: .env.docker
+    volumes:
+      - workspaces:/tmp/autosoftware-workspaces
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: .
+      target: frontend
+    ports:
+      - "6001:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  workspaces:
