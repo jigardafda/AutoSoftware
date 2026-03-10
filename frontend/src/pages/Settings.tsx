@@ -304,8 +304,9 @@ function KeyUsageDetail({ keyId }: { keyId: string }) {
                 <Area
                   type="monotone"
                   dataKey="cost"
-                  stroke="hsl(var(--primary))"
-                  fill="hsl(var(--primary) / 0.1)"
+                  stroke="var(--primary)"
+                  fill="var(--primary)"
+                  fillOpacity={0.1}
                   strokeWidth={2}
                 />
               </AreaChart>

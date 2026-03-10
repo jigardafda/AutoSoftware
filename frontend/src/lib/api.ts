@@ -15,6 +15,21 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return data.data;
 }
 
+async function requestFull<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = { ...options?.headers as Record<string, string> };
+  if (options?.body) {
+    headers["Content-Type"] = "application/json";
+  }
+  const res = await fetch(`${BASE}${path}`, {
+    credentials: "include",
+    headers,
+    ...options,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message || "Request failed");
+  return data;
+}
+
 export const api = {
   auth: {
     me: () => request<any>("/auth/me"),
@@ -36,7 +51,7 @@ export const api = {
     stats: (id: string) => request<any>(`/repos/${id}/stats`),
     tree: (id: string, path?: string) => {
       const qs = path ? `?path=${encodeURIComponent(path)}` : "";
-      return request<any[]>(`/repos/${id}/tree${qs}`);
+      return requestFull<{ data: any[]; branch?: string }>(`/repos/${id}/tree${qs}`);
     },
     file: (id: string, path: string) =>
       request<any>(`/repos/${id}/file?path=${encodeURIComponent(path)}`),

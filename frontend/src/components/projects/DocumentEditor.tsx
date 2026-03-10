@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 
 interface Props {
   projectId: string;
@@ -119,18 +120,20 @@ export function DocumentEditor({ projectId, document, onMoveUp, onMoveDown, canM
             {saveStatus === "saving" && <Loader2 className="h-3 w-3 inline animate-spin" />}
             {saveStatus === "saved" ? " Saved" : saveStatus === "saving" ? " Saving..." : " Unsaved"}
           </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-destructive"
-            onClick={() => {
-              if (confirm("Delete this document?")) {
-                deleteMutation.mutate();
-              }
-            }}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+          <ConfirmDeleteDialog
+            title="Delete document"
+            description="This will permanently delete this document. This action cannot be undone."
+            onConfirm={() => deleteMutation.mutate()}
+            trigger={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            }
+          />
         </div>
       </div>
       <Textarea

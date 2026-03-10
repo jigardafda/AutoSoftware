@@ -3,7 +3,7 @@ import fs from "fs/promises";
 import { prisma } from "../db.js";
 import { listRemoteRepos } from "../services/git-providers.js";
 import { schedulerService } from "../services/scheduler.js";
-import { listDirectory, readFile, safePath, RepoFsError } from "../services/repo-fs.js";
+import { listDirectory, readFile, safePath, getCurrentBranch, RepoFsError } from "../services/repo-fs.js";
 import type { ConnectRepoInput, UpdateRepoInput, OAuthProvider } from "@autosoftware/shared";
 
 const MIME_TYPES: Record<string, string> = {
@@ -217,8 +217,12 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
       if (!repo) return reply.code(404).send({ error: { message: "Repo not found" } });
 
       try {
-        const entries = await listDirectory(repo.id, request.query.path || "");
-        return { data: entries };
+        const requestedPath = request.query.path || "";
+        const [entries, branch] = await Promise.all([
+          listDirectory(repo.id, requestedPath),
+          !requestedPath ? getCurrentBranch(repo.id) : Promise.resolve(undefined),
+        ]);
+        return { data: entries, ...(branch !== undefined && { branch }) };
       } catch (err: any) {
         if (err instanceof RepoFsError && err.code === "PATH_TRAVERSAL") {
           return reply.code(400).send({ error: { message: "Invalid path" } });

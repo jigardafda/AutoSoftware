@@ -212,11 +212,7 @@ export function Repos() {
             onSelectAll={handleSelectAll}
             onScan={handleScan}
             onToggle={(id, isActive) => toggleMutation.mutate({ id, isActive })}
-            onDelete={(id) => {
-              if (confirm("Are you sure you want to delete this repository?")) {
-                deleteMutation.mutate(id);
-              }
-            }}
+            onDelete={(id) => deleteMutation.mutate(id)}
             onRowClick={handleRowClick}
           />
           <Pagination page={page} total={repos.length} onPageChange={setPage} />

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import {
@@ -19,6 +19,7 @@ interface FileTreeProps {
   repoId: string;
   onSelectFile: (path: string) => void;
   selectedPath?: string | null;
+  onBranchChange?: (branch: string | null) => void;
 }
 
 const ICON_MAP = {
@@ -48,12 +49,13 @@ function DirectoryNode({
 }) {
   const isExpanded = expandedDirs.has(entry.path);
 
-  const { data: children, isLoading } = useQuery({
+  const { data: result, isLoading } = useQuery({
     queryKey: ["repo-tree", repoId, entry.path],
     queryFn: () => api.repos.tree(repoId, entry.path),
     enabled: isExpanded,
   });
 
+  const children = result?.data;
   const FolderIcon = isExpanded ? FolderOpen : Folder;
 
   return (
@@ -172,13 +174,20 @@ function TreeNode({
   );
 }
 
-export function FileTree({ repoId, onSelectFile, selectedPath }: FileTreeProps) {
+export function FileTree({ repoId, onSelectFile, selectedPath, onBranchChange }: FileTreeProps) {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
 
-  const { data: rootEntries, isLoading, isError } = useQuery({
+  const { data: rootResult, isLoading, isError } = useQuery({
     queryKey: ["repo-tree", repoId, ""],
     queryFn: () => api.repos.tree(repoId),
   });
+
+  const rootEntries = rootResult?.data;
+  const branch = rootResult?.branch ?? null;
+
+  useEffect(() => {
+    onBranchChange?.(branch);
+  }, [branch, onBranchChange]);
 
   const toggleDir = (path: string) => {
     setExpandedDirs((prev) => {

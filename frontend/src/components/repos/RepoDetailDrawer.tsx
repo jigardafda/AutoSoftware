@@ -9,6 +9,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 
 function relativeTime(dateStr: string | null): string {
   if (!dateStr) return "Never";
@@ -148,19 +149,17 @@ export function RepoDetailDrawer({
 
         {/* Delete button at bottom */}
         <div className="pt-4 mt-auto border-t">
-          <Button
-            variant="destructive"
-            className="w-full"
-            onClick={() => {
-              if (confirm("Are you sure you want to delete this repository?")) {
-                onDelete(repo.id);
-                onOpenChange(false);
-              }
-            }}
-          >
-            <Trash2 className="h-4 w-4" />
-            Delete Repository
-          </Button>
+          <ConfirmDeleteDialog
+            title="Delete repository"
+            description="This will permanently delete this repository and all its data. This action cannot be undone."
+            onConfirm={() => { onDelete(repo.id); onOpenChange(false); }}
+            trigger={
+              <Button variant="destructive" className="w-full">
+                <Trash2 className="h-4 w-4" />
+                Delete Repository
+              </Button>
+            }
+          />
         </div>
       </SheetContent>
     </Sheet>

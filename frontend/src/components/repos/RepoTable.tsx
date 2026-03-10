@@ -1,8 +1,19 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Github, Play, Pause, Trash2, MoreHorizontal, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -94,8 +105,29 @@ export function RepoTable({
 }: RepoTableProps) {
   const navigate = useNavigate();
   const allSelected = repos.length > 0 && selectedIds.size === repos.length;
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   return (
+    <>
+    <AlertDialog open={!!deleteId} onOpenChange={(open) => { if (!open) setDeleteId(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete repository</AlertDialogTitle>
+          <AlertDialogDescription>
+            This will permanently delete this repository and all its data. This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => { if (deleteId) onDelete(deleteId); setDeleteId(null); }}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     <div className="overflow-x-auto rounded-md border">
     <Table>
       <TableHeader>
@@ -191,7 +223,7 @@ export function RepoTable({
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="text-destructive focus:text-destructive"
-                    onClick={() => onDelete(repo.id)}
+                    onClick={() => setDeleteId(repo.id)}
                   >
                     <Trash2 className="h-4 w-4" />
                     Delete
@@ -204,5 +236,6 @@ export function RepoTable({
       </TableBody>
     </Table>
     </div>
+    </>
   );
 }

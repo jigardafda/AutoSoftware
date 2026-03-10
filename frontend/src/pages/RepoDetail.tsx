@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 import {
   ArrowLeft,
   Play,
@@ -132,7 +133,7 @@ const PRIORITY_COLOR: Record<string, string> = {
   critical: "bg-red-500/10 text-red-500 border-red-500/20",
 };
 
-const PIE_COLORS = ["hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))"];
+const PIE_COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6"];
 const BAR_COLORS: Record<string, string> = {
   pending: "#94a3b8",
   in_progress: "#3b82f6",
@@ -244,13 +245,16 @@ export function RepoDetail() {
           <Button size="sm" variant="outline" onClick={() => toggleMutation.mutate(!repo.isActive)}>
             {repo.isActive ? <><Pause className="h-4 w-4" /> Pause</> : <><Play className="h-4 w-4" /> Resume</>}
           </Button>
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={() => { if (confirm("Delete this repository and all its data?")) deleteMutation.mutate(); }}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          <ConfirmDeleteDialog
+            title="Delete repository"
+            description="This will permanently delete this repository and all its data. This action cannot be undone."
+            onConfirm={() => deleteMutation.mutate()}
+            trigger={
+              <Button size="sm" variant="destructive">
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            }
+          />
         </div>
       </div>
 
@@ -345,7 +349,12 @@ export function RepoDetail() {
                           cx="50%"
                           cy="50%"
                           outerRadius={70}
-                          label={({ type, count }) => `${type} (${count})`}
+                          stroke="var(--background)"
+                          label={({ x, y, type, count, textAnchor }) => (
+                            <text x={x} y={y} textAnchor={textAnchor} fill="var(--foreground)" fontSize={12}>
+                              {`${type} (${count})`}
+                            </text>
+                          )}
                           labelLine={false}
                         >
                           {tasksByType.map((_: any, i: number) => (
@@ -391,7 +400,7 @@ export function RepoDetail() {
 
         {/* Files Tab */}
         <TabsContent value="files">
-          <FileBrowser repoId={id!} />
+          <FileBrowser repoId={id!} initialPath={searchParams.get("path") || undefined} initialLine={searchParams.get("line") ? parseInt(searchParams.get("line")!, 10) : undefined} />
         </TabsContent>
 
         {/* Tasks Tab */}
@@ -548,7 +557,7 @@ export function RepoDetail() {
                       <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(d) => d.slice(5)} />
                       <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `$${v.toFixed(2)}`} />
                       <Tooltip formatter={(value) => [`$${Number(value).toFixed(4)}`, "Cost"]} />
-                      <Area type="monotone" dataKey="cost" stroke="hsl(var(--primary))" fill="hsl(var(--primary) / 0.1)" strokeWidth={2} />
+                      <Area type="monotone" dataKey="cost" stroke="var(--primary)" fill="var(--primary)" fillOpacity={0.1} strokeWidth={2} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>

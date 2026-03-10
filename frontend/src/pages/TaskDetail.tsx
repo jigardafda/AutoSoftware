@@ -1,6 +1,7 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   ExternalLink,
@@ -10,7 +11,10 @@ import {
   XCircle,
   Loader2,
   GitCommit,
+  Trash2,
 } from "lucide-react";
+import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
+import { LinkedText } from "@/components/LinkedText";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -146,6 +150,18 @@ export function TaskDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
+  const queryClient = useQueryClient();
+
+  const deleteMutation = useMutation({
+    mutationFn: () => api.tasks.delete(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      toast.success("Task deleted");
+      navigate("/tasks");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const { data: task, isLoading } = useQuery({
     queryKey: ["task", id],
     queryFn: () => api.tasks.get(id!),
@@ -182,16 +198,29 @@ export function TaskDetail() {
 
   return (
     <div className="space-y-6">
-      {/* Back button */}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="gap-1 text-muted-foreground hover:text-foreground -ml-2"
-        onClick={() => navigate("/tasks")}
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to Tasks
-      </Button>
+      {/* Back button + actions */}
+      <div className="flex items-center justify-between">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-1 text-muted-foreground hover:text-foreground -ml-2"
+          onClick={() => navigate("/tasks")}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Tasks
+        </Button>
+        <ConfirmDeleteDialog
+          title="Delete task"
+          description="This will permanently delete this task. This action cannot be undone."
+          onConfirm={() => deleteMutation.mutate()}
+          trigger={
+            <Button variant="destructive" size="sm" disabled={deleteMutation.isPending}>
+              {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Delete
+            </Button>
+          }
+        />
+      </div>
 
       {/* Header section */}
       <div className="space-y-3">
@@ -279,7 +308,11 @@ export function TaskDetail() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                {task.description || "No description provided."}
+                {task.description ? (
+                  <LinkedText text={task.description} repoId={task.repositoryId} />
+                ) : (
+                  "No description provided."
+                )}
               </p>
             </CardContent>
           </Card>
@@ -295,7 +328,7 @@ export function TaskDetail() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                  {metadata.resultSummary}
+                  <LinkedText text={metadata.resultSummary} repoId={task.repositoryId} />
                 </p>
               </CardContent>
             </Card>

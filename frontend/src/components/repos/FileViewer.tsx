@@ -11,9 +11,10 @@ import { toast } from "sonner";
 interface FileViewerProps {
   repoId: string;
   filePath: string | null;
+  highlightLine?: number;
 }
 
-export function FileViewer({ repoId, filePath }: FileViewerProps) {
+export function FileViewer({ repoId, filePath, highlightLine }: FileViewerProps) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["repo-file", repoId, filePath],
     queryFn: () => api.repos.file(repoId, filePath!),
@@ -127,9 +128,9 @@ export function FileViewer({ repoId, filePath }: FileViewerProps) {
             </div>
           </div>
         ) : language ? (
-          <CodeBlock code={data.content} language={language} />
+          <CodeBlock code={data.content} language={language} highlightLine={highlightLine} />
         ) : (
-          <CodeBlock code={data.content} />
+          <CodeBlock code={data.content} highlightLine={highlightLine} />
         )}
       </div>
     </ScrollArea>

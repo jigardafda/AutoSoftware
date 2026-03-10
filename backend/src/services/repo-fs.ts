@@ -107,6 +107,21 @@ function isBinary(buffer: Buffer): boolean {
 
 // ── Public API ─────────────────────────────────────────────────────────
 
+export async function getCurrentBranch(repoId: string): Promise<string | null> {
+  try {
+    const headPath = path.join(repoDir(repoId), ".git", "HEAD");
+    const content = (await fs.readFile(headPath, "utf-8")).trim();
+    // "ref: refs/heads/main" → "main"
+    if (content.startsWith("ref: refs/heads/")) {
+      return content.slice("ref: refs/heads/".length);
+    }
+    // Detached HEAD — return short SHA
+    return content.slice(0, 7);
+  } catch {
+    return null;
+  }
+}
+
 export async function listDirectory(
   repoId: string,
   relativePath: string,
