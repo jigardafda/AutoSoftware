@@ -4,7 +4,7 @@ export type TaskType = "improvement" | "bugfix" | "feature" | "refactor" | "secu
 export type TaskPriority = "low" | "medium" | "high" | "critical";
 export type TaskStatus = "planning" | "awaiting_input" | "planned" | "pending" | "in_progress" | "completed" | "failed" | "cancelled";
 export type TaskSource = "auto_scan" | "manual";
-export type ScanStatus = "completed" | "failed";
+export type ScanStatus = "in_progress" | "completed" | "failed";
 
 export interface UserDTO {
   id: string;
@@ -40,6 +40,13 @@ export interface TaskDTO {
   affectedFiles: string[];
   pullRequestUrl: string | null;
   pullRequestStatus: string | null;
+  scanResult?: {
+    id: string;
+    scannedAt: string;
+    status: string;
+    summary: string | null;
+    tasksCreated: number;
+  } | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;

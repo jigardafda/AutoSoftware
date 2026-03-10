@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { FolderKanban, Plus } from "lucide-react";
@@ -15,6 +15,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableHeader } from "@/components/SortableHeader";
+import { useSort, type SortConfig } from "@/hooks/useSort";
 import { CreateProjectDialog } from "@/components/projects/CreateProjectDialog";
 
 function relativeTime(dateStr: string | null): string {
@@ -30,6 +32,13 @@ function relativeTime(dateStr: string | null): string {
   return `${Math.floor(days / 30)}mo ago`;
 }
 
+const PROJECT_SORT_CONFIG: SortConfig = {
+  name: "string",
+  repoCount: "number",
+  docCount: "number",
+  updatedAt: "date",
+};
+
 export function Projects() {
   const navigate = useNavigate();
   const [createOpen, setCreateOpen] = useState(false);
@@ -40,7 +49,14 @@ export function Projects() {
     queryFn: api.projects.list,
   });
 
-  const pagedProjects = useMemo(() => paginate(projects, page), [projects, page]);
+  const { sort, onSort, sorted } = useSort(projects, PROJECT_SORT_CONFIG, {
+    key: "updatedAt",
+    direction: "desc",
+  });
+
+  useEffect(() => { setPage(0); }, [sort]);
+
+  const pagedProjects = useMemo(() => paginate(sorted, page), [sorted, page]);
 
   return (
     <div>
@@ -88,11 +104,11 @@ export function Projects() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
+                  <SortableHeader label="Name" sortKey="name" sort={sort} onSort={onSort} />
                   <TableHead>Description</TableHead>
-                  <TableHead className="w-16 text-center">Repos</TableHead>
-                  <TableHead className="w-16 text-center">Docs</TableHead>
-                  <TableHead className="w-20 text-right">Updated</TableHead>
+                  <SortableHeader label="Repos" sortKey="repoCount" sort={sort} onSort={onSort} className="w-16" />
+                  <SortableHeader label="Docs" sortKey="docCount" sort={sort} onSort={onSort} className="w-16" />
+                  <SortableHeader label="Updated" sortKey="updatedAt" sort={sort} onSort={onSort} className="w-20" />
                 </TableRow>
               </TableHeader>
               <TableBody>

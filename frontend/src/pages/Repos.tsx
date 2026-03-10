@@ -1,10 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { GitBranch, LayoutGrid, List, Plus } from "lucide-react";
 import { api } from "@/lib/api";
 import { Pagination, paginate } from "@/components/Pagination";
+import { useSort, type SortConfig } from "@/hooks/useSort";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RepoTable } from "@/components/repos/RepoTable";
@@ -15,6 +16,14 @@ import { EmptyState } from "@/components/EmptyState";
 import { cn } from "@/lib/utils";
 
 type ViewMode = "table" | "grid";
+
+const REPO_SORT_CONFIG: SortConfig = {
+  fullName: "string",
+  status: "repoStatus",
+  lastScannedAt: "date",
+  taskCount: "number",
+  scanInterval: "number",
+};
 
 export function Repos() {
   const queryClient = useQueryClient();
@@ -31,7 +40,14 @@ export function Repos() {
     queryFn: api.repos.list,
   });
 
-  const pagedRepos = useMemo(() => paginate(repos, page), [repos, page]);
+  const { sort, onSort, sorted } = useSort(repos, REPO_SORT_CONFIG, {
+    key: "lastScannedAt",
+    direction: "desc",
+  });
+
+  const pagedRepos = useMemo(() => paginate(sorted, page), [sorted, page]);
+
+  useEffect(() => { setPage(0); }, [sort]);
 
   const handleScan = (id: string) => {
     const repo = repos.find((r: any) => r.id === id);
@@ -214,6 +230,8 @@ export function Repos() {
             onToggle={(id, isActive) => toggleMutation.mutate({ id, isActive })}
             onDelete={(id) => deleteMutation.mutate(id)}
             onRowClick={handleRowClick}
+            sort={sort}
+            onSort={onSort}
           />
           <Pagination page={page} total={repos.length} onPageChange={setPage} />
         </>

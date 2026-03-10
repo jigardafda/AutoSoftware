@@ -51,6 +51,7 @@ enum TaskSource {
 }
 
 enum ScanStatus {
+  in_progress
   completed
   failed
 }
@@ -132,6 +133,7 @@ model Task {
   updatedAt         DateTime     @updatedAt
   completedAt       DateTime?
 
+  scanResultId       String?
   planningRound      Int      @default(0)
   enhancedPlan       String?
   affectedFiles      Json     @default("[]")
@@ -139,6 +141,7 @@ model Task {
   repository         Repository          @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
   user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   project            Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  scanResult         ScanResult?         @relation(fields: [scanResultId], references: [id], onDelete: SetNull)
   planningQuestions  PlanningQuestion[]
 }
 
@@ -170,6 +173,21 @@ model ScanResult {
   analysisData Json       @default("{}")
 
   repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  tasks      Task[]
+  logs       ScanLog[]
+}
+
+model ScanLog {
+  id           String   @id @default(cuid())
+  scanResultId String
+  level        String   @default("info")
+  message      String
+  metadata     Json     @default("{}")
+  createdAt    DateTime @default(now())
+
+  scanResult ScanResult @relation(fields: [scanResultId], references: [id], onDelete: Cascade)
+
+  @@index([scanResultId, createdAt])
 }
 
 model AiInsight {

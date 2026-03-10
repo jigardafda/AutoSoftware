@@ -19,6 +19,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableHeader } from "@/components/SortableHeader";
+import type { SortState } from "@/hooks/useSort";
 
 interface TaskTableProps {
   tasks: any[];
@@ -26,6 +28,8 @@ interface TaskTableProps {
   onSelect: (id: string) => void;
   onSelectAll: () => void;
   onRowClick: (task: any) => void;
+  sort: SortState;
+  onSort: (key: string) => void;
 }
 
 function relativeTime(date: string): string {
@@ -90,6 +94,8 @@ export function TaskTable({
   onSelect,
   onSelectAll,
   onRowClick,
+  sort,
+  onSort,
 }: TaskTableProps) {
   const allSelected = tasks.length > 0 && selectedIds.size === tasks.length;
   const someSelected = selectedIds.size > 0 && !allSelected;
@@ -111,13 +117,13 @@ export function TaskTable({
                 aria-label="Select all"
               />
             </TableHead>
-            <TableHead className="w-10">Status</TableHead>
-            <TableHead>Title</TableHead>
-            <TableHead className="w-24">Type</TableHead>
-            <TableHead className="w-24">Priority</TableHead>
-            <TableHead className="w-16">Source</TableHead>
+            <SortableHeader label="Status" sortKey="status" sort={sort} onSort={onSort} className="w-10" />
+            <SortableHeader label="Title" sortKey="title" sort={sort} onSort={onSort} />
+            <SortableHeader label="Type" sortKey="type" sort={sort} onSort={onSort} className="w-24" />
+            <SortableHeader label="Priority" sortKey="priority" sort={sort} onSort={onSort} className="w-24" />
+            <SortableHeader label="Source" sortKey="source" sort={sort} onSort={onSort} className="w-16" />
             <TableHead className="w-10">PR</TableHead>
-            <TableHead className="w-20 text-right">Created</TableHead>
+            <SortableHeader label="Created" sortKey="createdAt" sort={sort} onSort={onSort} className="w-20" />
           </TableRow>
         </TableHeader>
         <TableBody>

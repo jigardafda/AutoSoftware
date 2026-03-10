@@ -44,6 +44,15 @@ export const taskRoutes: FastifyPluginAsync = async (app) => {
         planningQuestions: {
           orderBy: [{ round: "desc" }, { sortOrder: "asc" }],
         },
+        scanResult: {
+          select: {
+            id: true,
+            scannedAt: true,
+            status: true,
+            summary: true,
+            tasksCreated: true,
+          },
+        },
       },
     });
     if (!task) return reply.code(404).send({ error: { message: "Task not found" } });
@@ -54,6 +63,7 @@ export const taskRoutes: FastifyPluginAsync = async (app) => {
         planningRound: task.planningRound,
         enhancedPlan: task.enhancedPlan,
         planningQuestions: task.planningQuestions,
+        scanResult: task.scanResult,
       },
     };
   });
@@ -152,16 +162,78 @@ export const taskRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
+  app.post<{ Params: { id: string } }>("/:id/plan", async (request, reply) => {
+    const task = await prisma.task.findFirst({
+      where: { id: request.params.id, userId: request.userId },
+    });
+    if (!task) return reply.code(404).send({ error: { message: "Task not found" } });
+    if (!["pending", "planned", "failed"].includes(task.status)) {
+      return reply.code(400).send({ error: { message: "Task cannot be planned in its current state" } });
+    }
+
+    await prisma.task.update({
+      where: { id: task.id },
+      data: { status: "planning", planningRound: 0, enhancedPlan: null, affectedFiles: "[]" },
+    });
+
+    await schedulerService.queueTaskPlanning(task.id);
+
+    return { data: { success: true } };
+  });
+
   app.delete<{ Params: { id: string } }>("/:id", async (request, reply) => {
     const task = await prisma.task.findFirst({
       where: { id: request.params.id, userId: request.userId },
     });
     if (!task) return reply.code(404).send({ error: { message: "Task not found" } });
 
-    await prisma.task.update({
-      where: { id: task.id },
-      data: { status: "cancelled" },
-    });
+    // Cancel running jobs by marking cancelled first so workers skip it
+    if (["planning", "in_progress"].includes(task.status)) {
+      await prisma.task.update({
+        where: { id: task.id },
+        data: { status: "cancelled" },
+      });
+    }
+
+    await prisma.task.delete({ where: { id: task.id } });
     return { data: { success: true } };
+  });
+
+  app.post<{ Body: { ids: string[] } }>("/bulk-delete", async (request, reply) => {
+    const { ids } = request.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return reply.code(400).send({ error: { message: "ids array is required" } });
+    }
+
+    // Verify all tasks belong to the current user
+    const tasks = await prisma.task.findMany({
+      where: { id: { in: ids }, userId: request.userId },
+      select: { id: true, status: true },
+    });
+
+    if (tasks.length === 0) {
+      return reply.code(404).send({ error: { message: "No matching tasks found" } });
+    }
+
+    const taskIds = tasks.map((t) => t.id);
+
+    // Cancel any running/planning tasks so workers skip them
+    const activeIds = tasks
+      .filter((t) => ["planning", "in_progress"].includes(t.status))
+      .map((t) => t.id);
+
+    if (activeIds.length > 0) {
+      await prisma.task.updateMany({
+        where: { id: { in: activeIds } },
+        data: { status: "cancelled" },
+      });
+    }
+
+    // Delete all tasks (planning questions cascade)
+    await prisma.task.deleteMany({
+      where: { id: { in: taskIds } },
+    });
+
+    return { data: { deleted: taskIds.length } };
   });
 };

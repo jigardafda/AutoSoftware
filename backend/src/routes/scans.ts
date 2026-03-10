@@ -23,11 +23,48 @@ export const scanRoutes: FastifyPluginAsync = async (app) => {
   app.get<{ Params: { id: string } }>("/:id", async (request, reply) => {
     const scan = await prisma.scanResult.findUnique({
       where: { id: request.params.id },
-      include: { repository: { select: { userId: true } } },
+      include: {
+        repository: { select: { userId: true, fullName: true, provider: true } },
+        tasks: {
+          select: { id: true, title: true, type: true, priority: true, status: true },
+          orderBy: { createdAt: "asc" },
+        },
+        logs: { orderBy: { createdAt: "asc" } },
+      },
     });
     if (!scan || scan.repository.userId !== request.userId) {
       return reply.code(404).send({ error: { message: "Scan not found" } });
     }
     return { data: scan };
   });
+
+  app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
+    "/:id/logs",
+    async (request, reply) => {
+      const scan = await prisma.scanResult.findUnique({
+        where: { id: request.params.id },
+        include: { repository: { select: { userId: true } } },
+      });
+      if (!scan || scan.repository.userId !== request.userId) {
+        return reply.code(404).send({ error: { message: "Scan not found" } });
+      }
+
+      const where: any = { scanResultId: scan.id };
+      if (request.query.after) {
+        const afterLog = await prisma.scanLog.findUnique({
+          where: { id: request.query.after },
+          select: { createdAt: true },
+        });
+        if (afterLog) {
+          where.createdAt = { gt: afterLog.createdAt };
+        }
+      }
+
+      const logs = await prisma.scanLog.findMany({
+        where,
+        orderBy: { createdAt: "asc" },
+      });
+      return { data: logs };
+    }
+  );
 };

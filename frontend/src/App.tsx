@@ -11,6 +11,7 @@ import { Tasks } from "./pages/Tasks";
 import { TaskDetail } from "./pages/TaskDetail";
 import { SettingsPage } from "./pages/Settings";
 import { Scans } from "./pages/Scans";
+import { ScanDetail } from "./pages/ScanDetail";
 import { Activity } from "./pages/Activity";
 import { Queues } from "./pages/Queues";
 import { RepoDetail } from "./pages/RepoDetail";
@@ -50,6 +51,7 @@ function AppRoutes() {
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/tasks/:id" element={<TaskDetail />} />
           <Route path="/scans" element={<Scans />} />
+          <Route path="/scans/:id" element={<ScanDetail />} />
           <Route path="/activity" element={<Activity />} />
           <Route path="/queues" element={<Queues />} />
           <Route path="/settings" element={<SettingsPage />} />

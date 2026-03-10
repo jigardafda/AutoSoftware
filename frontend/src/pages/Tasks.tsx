@@ -4,7 +4,8 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Pagination, paginate } from "@/components/Pagination";
-import { Plus, Loader2, CheckCircle2 } from "lucide-react";
+import { useSort, type SortConfig } from "@/hooks/useSort";
+import { Plus, Loader2, CheckCircle2, BrainCircuit, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,6 +13,25 @@ import { TaskFilters } from "@/components/tasks/TaskFilters";
 import { TaskTable } from "@/components/tasks/TaskTable";
 import { CreateTaskSheet } from "@/components/tasks/CreateTaskSheet";
 import { EmptyState } from "@/components/EmptyState";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+const TASK_SORT_CONFIG: SortConfig = {
+  status: "taskStatus",
+  title: "string",
+  type: "string",
+  priority: "priority",
+  source: "string",
+  createdAt: "date",
+};
 
 export function Tasks() {
   const navigate = useNavigate();
@@ -19,10 +39,8 @@ export function Tasks() {
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [page, setPage] = useState(0);
-
-  // Reset page when filters change
-  useEffect(() => { setPage(0); }, [filters]);
 
   // Build query params — only include non-"all" filters
   const queryParams = useMemo(() => {
@@ -40,7 +58,15 @@ export function Tasks() {
     queryFn: () => api.tasks.list(Object.keys(queryParams).length ? queryParams : undefined),
   });
 
-  const pagedTasks = useMemo(() => paginate(tasks, page), [tasks, page]);
+  const { sort, onSort, sorted } = useSort(tasks, TASK_SORT_CONFIG, {
+    key: "createdAt",
+    direction: "desc",
+  });
+
+  // Reset page when filters or sort change
+  useEffect(() => { setPage(0); }, [filters, sort]);
+
+  const pagedTasks = useMemo(() => paginate(sorted, page), [sorted, page]);
 
   const cancelMutation = useMutation({
     mutationFn: (id: string) =>
@@ -91,11 +117,47 @@ export function Tasks() {
     [navigate]
   );
 
+  const planMutation = useMutation({
+    mutationFn: (id: string) => api.tasks.startPlanning(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      toast.success("Planning started");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const handleCancelSelected = useCallback(() => {
     for (const id of selectedIds) {
       cancelMutation.mutate(id);
     }
   }, [selectedIds, cancelMutation]);
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.tasks.bulkDelete(ids),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      setSelectedIds(new Set());
+      toast.success(`${data.deleted} task${data.deleted === 1 ? "" : "s"} deleted`);
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to delete tasks");
+    },
+  });
+
+  const handlePlanSelected = useCallback(() => {
+    const plannable = tasks.filter(
+      (t: any) => selectedIds.has(t.id) && ["pending", "planned", "failed"].includes(t.status)
+    );
+    for (const t of plannable) {
+      planMutation.mutate(t.id);
+    }
+    setSelectedIds(new Set());
+  }, [selectedIds, tasks, planMutation]);
+
+  const handleDeleteSelected = useCallback(() => {
+    bulkDeleteMutation.mutate(Array.from(selectedIds));
+    setDeleteDialogOpen(false);
+  }, [selectedIds, bulkDeleteMutation]);
 
   return (
     <div className="space-y-4">
@@ -129,6 +191,19 @@ export function Tasks() {
             {selectedIds.size} selected
           </span>
           <Button
+            variant="outline"
+            size="sm"
+            onClick={handlePlanSelected}
+            disabled={planMutation.isPending}
+          >
+            {planMutation.isPending ? (
+              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+            ) : (
+              <BrainCircuit className="h-3 w-3 mr-1" />
+            )}
+            Plan Selected
+          </Button>
+          <Button
             variant="destructive"
             size="sm"
             onClick={handleCancelSelected}
@@ -138,6 +213,19 @@ export function Tasks() {
               <Loader2 className="h-3 w-3 animate-spin mr-1" />
             ) : null}
             Cancel Selected
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => setDeleteDialogOpen(true)}
+            disabled={bulkDeleteMutation.isPending}
+          >
+            {bulkDeleteMutation.isPending ? (
+              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+            ) : (
+              <Trash2 className="h-3 w-3 mr-1" />
+            )}
+            Delete Selected
           </Button>
           <Button
             variant="ghost"
@@ -194,6 +282,8 @@ export function Tasks() {
             onSelect={handleSelect}
             onSelectAll={handleSelectAll}
             onRowClick={handleRowClick}
+            sort={sort}
+            onSort={onSort}
           />
           <Pagination page={page} total={tasks.length} onPageChange={setPage} />
         </>
@@ -201,6 +291,27 @@ export function Tasks() {
 
       {/* Create Sheet */}
       <CreateTaskSheet open={sheetOpen} onOpenChange={setSheetOpen} />
+
+      {/* Bulk Delete Confirmation */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedIds.size} task{selectedIds.size === 1 ? "" : "s"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the selected tasks and cancel any running jobs. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteSelected}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

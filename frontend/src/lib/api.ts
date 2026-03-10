@@ -68,8 +68,15 @@ export const api = {
     update: (id: string, body: any) =>
       request<any>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     delete: (id: string) => request<any>(`/tasks/${id}`, { method: "DELETE" }),
+    bulkDelete: (ids: string[]) =>
+      request<{ deleted: number }>("/tasks/bulk-delete", {
+        method: "POST",
+        body: JSON.stringify({ ids }),
+      }),
     submitAnswers: (id: string, body: { answers: Record<string, any> }) =>
       request<any>(`/tasks/${id}/answers`, { method: "POST", body: JSON.stringify(body) }),
+    startPlanning: (id: string) =>
+      request<any>(`/tasks/${id}/plan`, { method: "POST" }),
   },
   projects: {
     list: () => request<any[]>("/projects"),
@@ -97,6 +104,10 @@ export const api = {
   scans: {
     list: () => request<any[]>("/scans"),
     get: (id: string) => request<any>(`/scans/${id}`),
+    logs: (id: string, after?: string) => {
+      const qs = after ? `?after=${encodeURIComponent(after)}` : "";
+      return request<any[]>(`/scans/${id}/logs${qs}`);
+    },
   },
   ai: {
     command: (text: string) =>

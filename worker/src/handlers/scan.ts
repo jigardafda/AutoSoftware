@@ -14,6 +14,10 @@ interface ScanTask {
   priority: "low" | "medium" | "high" | "critical";
 }
 
+async function emitLog(scanResultId: string, level: string, message: string, metadata: Record<string, any> = {}) {
+  await prisma.scanLog.create({ data: { scanResultId, level, message, metadata } });
+}
+
 export async function handleRepoScan(jobs: { data: { repoId: string; projectId?: string } }[]) {
   const job = jobs[0];
   const { repoId, projectId } = job.data;
@@ -81,17 +85,25 @@ export async function handleRepoScan(jobs: { data: { repoId: string; projectId?:
     data: { status: "scanning" },
   });
 
+  const scanResult = await prisma.scanResult.create({
+    data: { repositoryId: repoId, status: "in_progress", analysisData: {} },
+  });
+  await emitLog(scanResult.id, "step", "Scan started");
+
   try {
+    await emitLog(scanResult.id, "step", "Cloning repository...");
     const repoDir = await cloneOrPullRepo(
       repoId,
       repo.cloneUrl,
       account.accessToken,
       repo.provider
     );
+    await emitLog(scanResult.id, "info", "Repository ready");
 
     const projectContext = await getProjectContext(repoId, projectId);
 
     let analysisText = "";
+    await emitLog(scanResult.id, "step", "Analyzing codebase with AI agent...");
 
     for await (const message of query({
       prompt: `${projectContext ? projectContext + "\n---\n\n" : ""}You are a senior software engineer performing a code review and analysis of this repository.
@@ -126,6 +138,9 @@ IMPORTANT: Respond with ONLY a JSON array of tasks:
       }
     }
 
+    await emitLog(scanResult.id, "info", "Analysis complete");
+    await emitLog(scanResult.id, "step", "Parsing analysis results...");
+
     let tasks: ScanTask[] = [];
     try {
       const jsonMatch = analysisText.match(/\[[\s\S]*\]/);
@@ -135,6 +150,8 @@ IMPORTANT: Respond with ONLY a JSON array of tasks:
     } catch (parseErr) {
       console.error("Failed to parse scan results:", parseErr);
     }
+
+    await emitLog(scanResult.id, "info", `Found ${tasks.length} potential improvements`);
 
     // Semantic deduplication: use Claude to compare new tasks against existing open ones
     const existingTasks = await prisma.task.findMany({
@@ -147,6 +164,7 @@ IMPORTANT: Respond with ONLY a JSON array of tasks:
 
     let newTasks = tasks;
     if (existingTasks.length > 0 && tasks.length > 0) {
+      await emitLog(scanResult.id, "step", "Checking for duplicate tasks...");
       try {
         const apiKey = process.env.ANTHROPIC_API_KEY;
         const client = new Anthropic({ apiKey });
@@ -201,7 +219,10 @@ If all new tasks are duplicates, return []. If none are duplicates, return all i
         console.error("Dedup check failed, creating all tasks:", dedupErr);
         // Fall through — create all tasks if dedup fails
       }
+      await emitLog(scanResult.id, "info", `Deduplication complete: ${tasks.length - newTasks.length} duplicates removed`);
     }
+
+    await emitLog(scanResult.id, "step", `Creating ${newTasks.length} tasks...`);
 
     let tasksCreated = 0;
     for (const task of newTasks) {
@@ -214,20 +235,22 @@ If all new tasks are duplicates, return []. If none are duplicates, return all i
           type: task.type,
           priority: task.priority,
           source: "auto_scan",
+          scanResultId: scanResult.id,
         },
       });
       tasksCreated++;
     }
 
-    await prisma.scanResult.create({
+    await prisma.scanResult.update({
+      where: { id: scanResult.id },
       data: {
-        repositoryId: repoId,
         status: "completed",
-        summary: `Found ${tasksCreated} potential improvements`,
-        tasksCreated,
+        summary: `Found ${newTasks.length} potential improvements`,
+        tasksCreated: newTasks.length,
         analysisData: { rawAnalysis: analysisText, tasks } as any,
       },
     });
+    await emitLog(scanResult.id, "success", `Scan completed: ${tasksCreated} tasks created`);
 
     await prisma.repository.update({
       where: { id: repoId },
@@ -266,9 +289,10 @@ If all new tasks are duplicates, return []. If none are duplicates, return all i
       }).catch(() => {});
     }
 
-    await prisma.scanResult.create({
+    await emitLog(scanResult.id, "error", err instanceof Error ? err.message : "Unknown error");
+    await prisma.scanResult.update({
+      where: { id: scanResult.id },
       data: {
-        repositoryId: repoId,
         status: "failed",
         summary: err instanceof Error ? err.message : "Unknown error",
         analysisData: {},

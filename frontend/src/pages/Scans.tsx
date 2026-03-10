@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 import { Pagination, paginate } from "@/components/Pagination";
 import {
@@ -8,8 +9,7 @@ import {
   Search,
   Github,
   GitlabIcon,
-  ChevronDown,
-  ChevronUp,
+  ChevronRight,
   Loader2,
   Filter,
   X,
@@ -31,6 +31,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableHeader } from "@/components/SortableHeader";
+import { useSort, type SortConfig } from "@/hooks/useSort";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/EmptyState";
@@ -111,8 +113,15 @@ function ActiveScans() {
   );
 }
 
+const SCAN_SORT_CONFIG: SortConfig = {
+  "repository.fullName": "string",
+  scannedAt: "date",
+  status: "scanStatus",
+  tasksCreated: "number",
+};
+
 export function Scans() {
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const navigate = useNavigate();
   const [repoFilter, setRepoFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [tasksFilter, setTasksFilter] = useState<string>("all");
@@ -121,6 +130,8 @@ export function Scans() {
   const { data: scans = [], isLoading } = useQuery({
     queryKey: ["scans"],
     queryFn: api.scans.list,
+    refetchInterval: (query) =>
+      query.state.data?.some((s: any) => s.status === "in_progress") ? 3000 : false,
   });
 
   // Derive unique repos for filter dropdown
@@ -144,20 +155,21 @@ export function Scans() {
     });
   }, [scans, repoFilter, statusFilter, tasksFilter]);
 
-  const hasActiveFilters = repoFilter !== "all" || statusFilter !== "all" || tasksFilter !== "all";
-  const paged = useMemo(() => paginate(filtered, page), [filtered, page]);
+  const { sort, onSort, sorted } = useSort(filtered, SCAN_SORT_CONFIG, {
+    key: "scannedAt",
+    direction: "desc",
+  });
 
-  // Reset page when filters change
-  useEffect(() => { setPage(0); }, [repoFilter, statusFilter, tasksFilter]);
+  const hasActiveFilters = repoFilter !== "all" || statusFilter !== "all" || tasksFilter !== "all";
+  const paged = useMemo(() => paginate(sorted, page), [sorted, page]);
+
+  // Reset page when filters or sort change
+  useEffect(() => { setPage(0); }, [repoFilter, statusFilter, tasksFilter, sort]);
 
   const clearFilters = () => {
     setRepoFilter("all");
     setStatusFilter("all");
     setTasksFilter("all");
-  };
-
-  const toggleExpand = (id: string) => {
-    setExpandedId((prev) => (prev === id ? null : id));
   };
 
   if (isLoading) {
@@ -233,6 +245,7 @@ export function Scans() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="in_progress">In Progress</SelectItem>
             <SelectItem value="completed">Completed</SelectItem>
             <SelectItem value="failed">Failed</SelectItem>
           </SelectContent>
@@ -277,21 +290,20 @@ export function Scans() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Repository</TableHead>
-                <TableHead>Scanned At</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Tasks Created</TableHead>
+                <SortableHeader label="Repository" sortKey="repository.fullName" sort={sort} onSort={onSort} />
+                <SortableHeader label="Scanned At" sortKey="scannedAt" sort={sort} onSort={onSort} />
+                <SortableHeader label="Status" sortKey="status" sort={sort} onSort={onSort} />
+                <SortableHeader label="Tasks Created" sortKey="tasksCreated" sort={sort} onSort={onSort} />
                 <TableHead>Summary</TableHead>
                 <TableHead className="w-8" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {paged.map((scan: any) => (
-                <>
                   <TableRow
                     key={scan.id}
                     className="cursor-pointer"
-                    onClick={() => toggleExpand(scan.id)}
+                    onClick={() => navigate(`/scans/${scan.id}`)}
                   >
                     <TableCell>
                       <div className="flex items-center gap-2 min-w-0">
@@ -305,7 +317,15 @@ export function Scans() {
                       {timeAgo(scan.scannedAt)}
                     </TableCell>
                     <TableCell>
-                      {scan.status === "completed" ? (
+                      {scan.status === "in_progress" ? (
+                        <Badge
+                          variant="secondary"
+                          className="bg-blue-500/10 text-blue-500 border-blue-500/20 animate-pulse"
+                        >
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          In Progress
+                        </Badge>
+                      ) : scan.status === "completed" ? (
                         <Badge
                           variant="secondary"
                           className="bg-green-500/10 text-green-500 border-green-500/20"
@@ -334,38 +354,9 @@ export function Scans() {
                         : "--"}
                     </TableCell>
                     <TableCell>
-                      {expandedId === scan.id ? (
-                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                      )}
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
                     </TableCell>
                   </TableRow>
-                  {expandedId === scan.id && (
-                    <TableRow key={`${scan.id}-detail`}>
-                      <TableCell colSpan={6} className="p-0">
-                        <Card className="m-2 border-dashed">
-                          <CardContent className="p-4">
-                            <p className="text-sm font-medium mb-1">Full Summary</p>
-                            <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                              {scan.summary || "No summary available."}
-                            </p>
-                            {scan.errorMessage && (
-                              <>
-                                <p className="text-sm font-medium mt-3 mb-1 text-red-400">
-                                  Error
-                                </p>
-                                <p className="text-sm text-red-400/80">
-                                  {scan.errorMessage}
-                                </p>
-                              </>
-                            )}
-                          </CardContent>
-                        </Card>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </>
               ))}
             </TableBody>
           </Table>

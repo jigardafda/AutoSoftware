@@ -22,6 +22,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SortableHeader } from "@/components/SortableHeader";
+import type { SortState } from "@/hooks/useSort";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -91,6 +93,8 @@ interface RepoTableProps {
   onToggle: (id: string, isActive: boolean) => void;
   onDelete: (id: string) => void;
   onRowClick: (repo: any) => void;
+  sort: SortState;
+  onSort: (key: string) => void;
 }
 
 export function RepoTable({
@@ -102,6 +106,8 @@ export function RepoTable({
   onToggle,
   onDelete,
   onRowClick,
+  sort,
+  onSort,
 }: RepoTableProps) {
   const navigate = useNavigate();
   const allSelected = repos.length > 0 && selectedIds.size === repos.length;
@@ -139,11 +145,11 @@ export function RepoTable({
               aria-label="Select all"
             />
           </TableHead>
-          <TableHead>Name</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Last Scan</TableHead>
-          <TableHead>Tasks</TableHead>
-          <TableHead>Interval</TableHead>
+          <SortableHeader label="Name" sortKey="fullName" sort={sort} onSort={onSort} />
+          <SortableHeader label="Status" sortKey="status" sort={sort} onSort={onSort} />
+          <SortableHeader label="Last Scan" sortKey="lastScannedAt" sort={sort} onSort={onSort} />
+          <SortableHeader label="Tasks" sortKey="taskCount" sort={sort} onSort={onSort} />
+          <SortableHeader label="Interval" sortKey="scanInterval" sort={sort} onSort={onSort} />
           <TableHead className="w-[48px]">
             <span className="sr-only">Actions</span>
           </TableHead>

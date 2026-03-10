@@ -15,6 +15,8 @@ import {
   MessageSquare,
   ClipboardList,
   FileCode2,
+  BrainCircuit,
+  ScanSearch,
 } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 import { PlanningQuestionsCard } from "@/components/tasks/PlanningQuestionsCard";
@@ -181,6 +183,15 @@ export function TaskDetail() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const planMutation = useMutation({
+    mutationFn: () => api.tasks.startPlanning(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["task", id] });
+      toast.success("Planning started");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const { data: task, isLoading } = useQuery({
     queryKey: ["task", id],
     queryFn: () => api.tasks.get(id!),
@@ -230,17 +241,30 @@ export function TaskDetail() {
           <ArrowLeft className="h-4 w-4" />
           Back to Tasks
         </Button>
-        <ConfirmDeleteDialog
-          title="Delete task"
-          description="This will permanently delete this task. This action cannot be undone."
-          onConfirm={() => deleteMutation.mutate()}
-          trigger={
-            <Button variant="destructive" size="sm" disabled={deleteMutation.isPending}>
-              {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-              Delete
+        <div className="flex items-center gap-2">
+          {["pending", "planned", "failed"].includes(task.status) && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => planMutation.mutate()}
+              disabled={planMutation.isPending}
+            >
+              {planMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <BrainCircuit className="h-4 w-4" />}
+              {task.status === "planned" ? "Re-plan" : "Start Planning"}
             </Button>
-          }
-        />
+          )}
+          <ConfirmDeleteDialog
+            title="Delete task"
+            description="This will permanently delete this task. This action cannot be undone."
+            onConfirm={() => deleteMutation.mutate()}
+            trigger={
+              <Button variant="destructive" size="sm" disabled={deleteMutation.isPending}>
+                {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Delete
+              </Button>
+            }
+          />
+        </div>
       </div>
 
       {/* Header section */}
@@ -417,6 +441,58 @@ export function TaskDetail() {
                 <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
                   <LinkedText text={metadata.resultSummary} repoId={task.repositoryId} />
                 </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Scan Origin Card */}
+          {task.scanResult && (
+            <Card className="border-indigo-500/30 bg-indigo-500/5">
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <ScanSearch className="h-4 w-4 text-indigo-500" />
+                  <span className="text-indigo-500">Originating Scan</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <dl className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <dt className="text-muted-foreground">Scanned</dt>
+                    <dd className="font-medium mt-0.5">
+                      {relativeTime(task.scanResult.scannedAt)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Status</dt>
+                    <dd className="mt-0.5">
+                      <Badge
+                        variant="outline"
+                        className={
+                          task.scanResult.status === "completed"
+                            ? "bg-green-500/15 text-green-500 border-green-500/20"
+                            : "bg-red-500/15 text-red-500 border-red-500/20"
+                        }
+                      >
+                        {task.scanResult.status === "completed" ? (
+                          <CheckCircle2 className="h-3 w-3 mr-1" />
+                        ) : (
+                          <XCircle className="h-3 w-3 mr-1" />
+                        )}
+                        {task.scanResult.status}
+                      </Badge>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Tasks Created</dt>
+                    <dd className="font-medium mt-0.5">{task.scanResult.tasksCreated}</dd>
+                  </div>
+                  {task.scanResult.summary && (
+                    <div className="sm:col-span-3">
+                      <dt className="text-muted-foreground">Summary</dt>
+                      <dd className="text-muted-foreground mt-0.5">{task.scanResult.summary}</dd>
+                    </div>
+                  )}
+                </dl>
               </CardContent>
             </Card>
           )}
