@@ -25,10 +25,30 @@ export async function handleTaskExecution(job: { data: { taskId: string } }) {
     return;
   }
 
+  // Validate API key before starting
+  if (!config.anthropicApiKey || config.anthropicApiKey === "sk-ant-xxx") {
+    await prisma.task.update({
+      where: { id: taskId },
+      data: {
+        status: "failed",
+        metadata: { error: "ANTHROPIC_API_KEY is not configured. Set a valid API key in .env to enable task execution." },
+      },
+    });
+    console.error("Task aborted: ANTHROPIC_API_KEY not configured");
+    return;
+  }
+
   const repo = task.repository;
-  const account = repo.user.accounts.find((a) => a.provider === repo.provider);
+  const account = repo.user.accounts.find((a: any) => a.provider === repo.provider);
   if (!account) {
-    throw new Error(`No account found for provider ${repo.provider}`);
+    await prisma.task.update({
+      where: { id: taskId },
+      data: {
+        status: "failed",
+        metadata: { error: `No OAuth account found for provider ${repo.provider}` },
+      },
+    });
+    return;
   }
 
   await prisma.task.update({

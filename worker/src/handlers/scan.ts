@@ -14,23 +14,55 @@ export async function handleRepoScan(job: { data: { repoId: string } }) {
   const { repoId } = job.data;
   console.log(`Starting scan for repo ${repoId}`);
 
-  const repo = await prisma.repository.findUnique({
-    where: { id: repoId },
-    include: {
-      user: {
-        include: { accounts: true },
+  let repo: any;
+  try {
+    repo = await prisma.repository.findUnique({
+      where: { id: repoId },
+      include: {
+        user: {
+          include: { accounts: true },
+        },
       },
-    },
-  });
+    });
+  } catch (err) {
+    console.error(`Failed to fetch repo ${repoId}:`, err);
+    return;
+  }
 
   if (!repo || !repo.isActive) {
     console.log(`Repo ${repoId} not found or inactive, skipping`);
     return;
   }
 
-  const account = repo.user.accounts.find((a) => a.provider === repo.provider);
+  const account = repo.user.accounts.find((a: any) => a.provider === repo.provider);
   if (!account) {
+    await prisma.scanResult.create({
+      data: {
+        repositoryId: repoId,
+        status: "failed",
+        summary: `No OAuth account found for provider ${repo.provider}`,
+        analysisData: {},
+      },
+    });
     console.error(`No account found for provider ${repo.provider}`);
+    return;
+  }
+
+  // Validate API key before starting
+  if (!config.anthropicApiKey || config.anthropicApiKey === "sk-ant-xxx") {
+    await prisma.scanResult.create({
+      data: {
+        repositoryId: repoId,
+        status: "failed",
+        summary: "ANTHROPIC_API_KEY is not configured. Set a valid API key in .env to enable scanning.",
+        analysisData: {},
+      },
+    });
+    await prisma.repository.update({
+      where: { id: repoId },
+      data: { status: "error" },
+    });
+    console.error("Scan aborted: ANTHROPIC_API_KEY not configured");
     return;
   }
 
