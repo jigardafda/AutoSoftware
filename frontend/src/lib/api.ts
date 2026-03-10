@@ -236,4 +236,35 @@ export const api = {
         daily: { date: string; cost: number; inputTokens: number; outputTokens: number; taskCount: number; scanCount: number }[];
       }>("/settings/usage"),
   },
+  plugins: {
+    // Marketplaces
+    listMarketplaces: () => request<any[]>("/plugins/marketplaces"),
+    addMarketplace: (body: { name: string; url: string }) =>
+      request<any>("/plugins/marketplaces", { method: "POST", body: JSON.stringify(body) }),
+    addOfficialMarketplace: () =>
+      request<any>("/plugins/marketplaces/add-official", { method: "POST" }),
+    removeMarketplace: (id: string) =>
+      request<any>(`/plugins/marketplaces/${id}`, { method: "DELETE" }),
+
+    // Browse & Install
+    browse: (params?: { search?: string; category?: string }) => {
+      const qs = params ? `?${new URLSearchParams(params as Record<string, string>)}` : "";
+      return request<any[]>(`/plugins/browse${qs}`);
+    },
+    install: (body: { pluginId: string; repoUrl: string; scope?: string; projectId?: string }) =>
+      request<any>("/plugins/install", { method: "POST", body: JSON.stringify(body) }),
+
+    // Installed plugins
+    listInstalled: (params?: { scope?: string; projectId?: string }) => {
+      const qs = params ? `?${new URLSearchParams(params as Record<string, string>)}` : "";
+      return request<any[]>(`/plugins/installed${qs}`);
+    },
+    get: (id: string) => request<any>(`/plugins/${id}`),
+    update: (id: string, body: any) =>
+      request<any>(`/plugins/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    sync: (id: string) =>
+      request<any>(`/plugins/${id}/sync`, { method: "POST" }),
+    uninstall: (id: string) =>
+      request<any>(`/plugins/${id}`, { method: "DELETE" }),
+  },
 };

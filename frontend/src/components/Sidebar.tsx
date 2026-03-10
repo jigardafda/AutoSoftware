@@ -13,6 +13,7 @@ import {
   LogOut,
   User,
   FolderKanban,
+  Puzzle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -45,6 +46,7 @@ const navItems = [
 ];
 
 const bottomNavItems = [
+  { to: "/plugins", label: "Plugins", icon: Puzzle },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 

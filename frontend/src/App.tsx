@@ -17,6 +17,7 @@ import { Queues } from "./pages/Queues";
 import { RepoDetail } from "./pages/RepoDetail";
 import { Projects } from "./pages/Projects";
 import { ProjectDetail } from "./pages/ProjectDetail";
+import { Plugins } from "./pages/Plugins";
 import { CommandPalette } from "./components/CommandPalette";
 import { Toaster } from "./components/ui/sonner";
 
@@ -54,6 +55,7 @@ function AppRoutes() {
           <Route path="/scans/:id" element={<ScanDetail />} />
           <Route path="/activity" element={<Activity />} />
           <Route path="/queues" element={<Queues />} />
+          <Route path="/plugins" element={<Plugins />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" />} />

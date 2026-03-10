@@ -109,14 +109,16 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  accounts       Account[]
-  repositories   Repository[]
-  tasks          Task[]
-  projects       Project[]
-  aiInsights     AiInsight[]
-  activityEvents ActivityEvent[]
-  apiKeys        ApiKey[]
-  integrations   Integration[]
+  accounts           Account[]
+  repositories       Repository[]
+  tasks              Task[]
+  projects           Project[]
+  aiInsights         AiInsight[]
+  activityEvents     ActivityEvent[]
+  apiKeys            ApiKey[]
+  integrations       Integration[]
+  pluginMarketplaces PluginMarketplace[]
+  installedPlugins   InstalledPlugin[]
 }
 
 model Account {
@@ -371,6 +373,7 @@ model Project {
   integrationLinks IntegrationLink[]
   embedConfig      EmbedConfig?
   embedSubmissions EmbedSubmission[]
+  installedPlugins InstalledPlugin[]
 
   @@index([userId])
 }
@@ -535,4 +538,73 @@ model EmbedQuestion {
   submission   EmbedSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
 
   @@index([submissionId, round])
+}
+
+// ============================================================================
+// Plugin System
+// ============================================================================
+
+enum PluginScope {
+  global       // Available in all projects
+  project      // Scoped to specific project
+}
+
+model PluginMarketplace {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  url         String   // URL to marketplace.json
+  isOfficial  Boolean  @default(false)
+  isEnabled   Boolean  @default(true)
+  lastFetched DateTime?
+  lastError   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, url])
+  @@index([userId])
+}
+
+model InstalledPlugin {
+  id            String       @id @default(cuid())
+  userId        String
+  projectId     String?      // null = global installation
+  scope         PluginScope  @default(global)
+
+  // Plugin identity (from plugin.json)
+  pluginId      String       // e.g., "anthropic/search-plugin"
+  name          String
+  description   String       @default("")
+  version       String
+  author        String?
+  repoUrl       String       // Repository URL for fetching
+  iconUrl       String?
+
+  // Plugin manifest cache
+  manifest      Json         @default("{}") // Cached plugin.json content
+
+  // Components enabled
+  skillsEnabled   Boolean    @default(true)
+  agentsEnabled   Boolean    @default(true)
+  hooksEnabled    Boolean    @default(true)
+  mcpEnabled      Boolean    @default(true)
+
+  // Configuration
+  config          Json       @default("{}") // User-provided config values
+  permissions     Json       @default("[]") // Granted permissions
+
+  isEnabled     Boolean      @default(true)
+  lastSyncedAt  DateTime?
+  lastError     String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, pluginId, projectId])
+  @@index([userId, scope])
+  @@index([projectId])
 }
