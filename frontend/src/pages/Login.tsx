@@ -1,5 +1,6 @@
-import { Github, Gitlab, Zap, Shield } from "lucide-react";
+import { Github, Gitlab, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LogoIcon } from "@/components/Logo";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5002";
 
@@ -20,8 +21,8 @@ export function Login() {
       {/* Frosted glass card */}
       <div className="w-full max-w-md bg-card/80 backdrop-blur-xl border border-border shadow-2xl rounded-2xl p-8 sm:p-10">
         {/* Logo / Wordmark */}
-        <div className="flex items-center justify-center gap-2 mb-2">
-          <Zap className="h-8 w-8 text-primary" />
+        <div className="flex items-center justify-center gap-3 mb-2">
+          <LogoIcon className="h-12 w-12" />
           <h1 className="text-3xl font-bold tracking-tight text-foreground">
             AutoSoftware
           </h1>

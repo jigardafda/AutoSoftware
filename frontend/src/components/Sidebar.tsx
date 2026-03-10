@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
+import { Logo, LogoIcon } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -81,16 +82,10 @@ export function Sidebar() {
     >
       {/* Top: Logo + collapse toggle */}
       <div className="flex items-center justify-between h-12 px-3 border-b border-border">
-        <span
-          className={cn(
-            "font-semibold text-foreground transition-all overflow-hidden whitespace-nowrap",
-            collapsed ? "w-0 opacity-0" : "w-auto opacity-100"
-          )}
-        >
-          AutoSoftware
-        </span>
-        {collapsed && (
-          <span className="font-semibold text-foreground text-sm">AS</span>
+        {collapsed ? (
+          <LogoIcon className="h-6 w-6" />
+        ) : (
+          <Logo iconClassName="h-6 w-6" />
         )}
         <Button
           variant="ghost"

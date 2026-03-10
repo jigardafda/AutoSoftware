@@ -15,6 +15,7 @@ import {
   FolderKanban,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { Logo } from "@/components/Logo";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -180,7 +181,9 @@ export function Header() {
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="w-72 p-0">
           <SheetHeader className="px-4 py-3 border-b border-border">
-            <SheetTitle className="text-left">AutoSoftware</SheetTitle>
+            <SheetTitle className="text-left">
+              <Logo iconClassName="h-6 w-6" />
+            </SheetTitle>
           </SheetHeader>
           <ScrollArea className="h-[calc(100vh-57px)]">
             <nav className="flex flex-col gap-1 p-2">
