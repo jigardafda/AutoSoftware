@@ -3,7 +3,19 @@ import { prisma } from "../db.js";
 
 // Official Anthropic plugin marketplace URL
 const OFFICIAL_MARKETPLACE_URL =
-  "https://raw.githubusercontent.com/anthropics/claude-plugins-official/main/marketplace.json";
+  "https://raw.githubusercontent.com/anthropics/claude-plugins-official/main/.claude-plugin/marketplace.json";
+
+interface RawMarketplacePlugin {
+  name: string;
+  description: string;
+  version?: string;
+  author?: { name: string; email?: string } | string;
+  source: string | { source: string; url: string; sha?: string };
+  category?: string;
+  homepage?: string;
+  tags?: string[];
+  strict?: boolean;
+}
 
 interface MarketplacePlugin {
   id: string;
@@ -13,7 +25,7 @@ interface MarketplacePlugin {
   author?: string;
   repoUrl: string;
   iconUrl?: string;
-  categories?: string[];
+  category?: string;
   tags?: string[];
 }
 
@@ -34,7 +46,42 @@ async function fetchMarketplace(url: string): Promise<MarketplacePlugin[]> {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    return data.plugins || [];
+    const rawPlugins: RawMarketplacePlugin[] = data.plugins || [];
+
+    // Determine base URL for relative sources
+    const baseUrl = url.replace(/\/[^/]+$/, ""); // Remove filename
+    const repoBase = url.includes("github.com")
+      ? url.replace("/raw/", "/blob/").replace("raw.githubusercontent.com", "github.com").replace(/\/[^/]+\.json$/, "")
+      : "";
+
+    return rawPlugins.map((p) => {
+      // Determine repo URL from source
+      let repoUrl: string;
+      if (typeof p.source === "object" && p.source.url) {
+        repoUrl = p.source.url.replace(/\.git$/, "");
+      } else if (p.homepage) {
+        repoUrl = p.homepage;
+      } else if (typeof p.source === "string" && p.source.startsWith("./")) {
+        // Relative path - construct URL from marketplace location
+        repoUrl = repoBase ? `${repoBase.replace("/.claude-plugin", "")}/${p.source.slice(2)}` : p.source;
+      } else {
+        repoUrl = typeof p.source === "string" ? p.source : "";
+      }
+
+      // Extract author name
+      const author = typeof p.author === "object" ? p.author.name : p.author;
+
+      return {
+        id: p.name,
+        name: p.name,
+        description: p.description,
+        version: p.version || "1.0.0",
+        author,
+        repoUrl,
+        category: p.category,
+        tags: p.tags,
+      };
+    });
   } catch (err) {
     console.error(`Failed to fetch marketplace from ${url}:`, err);
     return [];
@@ -43,24 +90,47 @@ async function fetchMarketplace(url: string): Promise<MarketplacePlugin[]> {
 
 async function fetchPluginManifest(repoUrl: string): Promise<PluginManifest | null> {
   try {
-    // Convert repo URL to raw plugin.json URL
-    // e.g., https://github.com/user/repo -> https://raw.githubusercontent.com/user/repo/main/.claude-plugin/plugin.json
-    let rawUrl: string;
+    // Try multiple possible locations for the manifest
+    const possibleUrls: string[] = [];
+
     if (repoUrl.includes("github.com")) {
-      const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
+      // Extract owner/repo and optional path
+      const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+)(?:\/tree\/[^/]+\/(.+))?/);
       if (match) {
-        rawUrl = `https://raw.githubusercontent.com/${match[1]}/${match[2]}/main/.claude-plugin/plugin.json`;
-      } else {
-        return null;
+        const [, owner, repo, subpath] = match;
+        if (subpath) {
+          // URL points to a subdirectory, look for plugin.json there
+          possibleUrls.push(
+            `https://raw.githubusercontent.com/${owner}/${repo}/main/${subpath}/plugin.json`,
+            `https://raw.githubusercontent.com/${owner}/${repo}/main/${subpath}/.claude-plugin/plugin.json`
+          );
+        }
+        // Standard locations
+        possibleUrls.push(
+          `https://raw.githubusercontent.com/${owner}/${repo}/main/.claude-plugin/plugin.json`,
+          `https://raw.githubusercontent.com/${owner}/${repo}/main/plugin.json`
+        );
       }
     } else {
       // For other providers, try direct URL
-      rawUrl = `${repoUrl.replace(/\/$/, "")}/.claude-plugin/plugin.json`;
+      possibleUrls.push(
+        `${repoUrl.replace(/\/$/, "")}/.claude-plugin/plugin.json`,
+        `${repoUrl.replace(/\/$/, "")}/plugin.json`
+      );
     }
 
-    const res = await fetch(rawUrl);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
+    for (const rawUrl of possibleUrls) {
+      try {
+        const res = await fetch(rawUrl);
+        if (res.ok) {
+          return await res.json();
+        }
+      } catch {
+        // Try next URL
+      }
+    }
+
+    return null;
   } catch (err) {
     console.error(`Failed to fetch plugin manifest from ${repoUrl}:`, err);
     return null;
@@ -188,11 +258,12 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
         (p) =>
           p.name.toLowerCase().includes(searchLower) ||
           p.description.toLowerCase().includes(searchLower) ||
-          p.tags?.some((t) => t.toLowerCase().includes(searchLower))
+          p.tags?.some((t) => t.toLowerCase().includes(searchLower)) ||
+          p.category?.toLowerCase().includes(searchLower)
       );
     }
     if (category) {
-      filtered = filtered.filter((p) => p.categories?.includes(category));
+      filtered = filtered.filter((p) => p.category === category);
     }
 
     // Get user's installed plugins to mark installed status

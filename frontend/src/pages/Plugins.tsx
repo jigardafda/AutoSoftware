@@ -64,7 +64,7 @@ interface MarketplacePlugin {
   author?: string;
   repoUrl: string;
   iconUrl?: string;
-  categories?: string[];
+  category?: string;
   tags?: string[];
   marketplaceId: string;
   marketplaceName: string;
@@ -139,15 +139,18 @@ function PluginCard({
         <CardDescription className="line-clamp-2 text-sm">
           {plugin.description}
         </CardDescription>
-        {plugin.tags && plugin.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-3">
-            {plugin.tags.slice(0, 3).map((tag) => (
-              <Badge key={tag} variant="secondary" className="text-xs font-normal">
-                {tag}
-              </Badge>
-            ))}
-          </div>
-        )}
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {plugin.category && (
+            <Badge variant="outline" className="text-xs font-normal capitalize">
+              {plugin.category}
+            </Badge>
+          )}
+          {plugin.tags?.slice(0, 2).map((tag) => (
+            <Badge key={tag} variant="secondary" className="text-xs font-normal">
+              {tag}
+            </Badge>
+          ))}
+        </div>
       </CardContent>
       <CardFooter className="pt-0">
         <div className="flex items-center justify-between w-full">
