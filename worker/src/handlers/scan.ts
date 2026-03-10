@@ -49,7 +49,6 @@ export async function handleRepoScan(jobs: { data: { repoId: string; projectId?:
       where: { id: repoId },
       include: {
         user: {
-          include: { accounts: true },
           select: { id: true, settings: true, accounts: true },
         },
       },

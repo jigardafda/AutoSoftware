@@ -33,8 +33,8 @@ interface MarketplacePlugin {
 interface PluginManifest {
   name: string;
   description?: string;
-  version: string;
-  author?: string;
+  version?: string;
+  author?: string | { name?: string; email?: string };
   permissions?: string[];
   skills?: Array<{ name: string; description: string }>;
   agents?: Array<{ name: string; description: string }>;
@@ -356,6 +356,11 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
+    // Extract author name (can be string or object)
+    const authorName = typeof manifest.author === "object"
+      ? manifest.author?.name
+      : manifest.author;
+
     const plugin = await prisma.installedPlugin.create({
       data: {
         userId: request.userId,
@@ -364,8 +369,8 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
         pluginId,
         name: manifest.name,
         description: manifest.description || "",
-        version: manifest.version,
-        author: manifest.author,
+        version: manifest.version || "1.0.0",
+        author: authorName,
         repoUrl,
         manifest: manifest as any,
         permissions: manifest.permissions || [],
@@ -463,13 +468,18 @@ export const pluginRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(500).send({ error: { message: "Failed to fetch plugin manifest" } });
     }
 
+    // Extract author name (can be string or object)
+    const authorName = typeof manifest.author === "object"
+      ? manifest.author?.name
+      : manifest.author;
+
     const updated = await prisma.installedPlugin.update({
       where: { id },
       data: {
         name: manifest.name,
         description: manifest.description || "",
-        version: manifest.version,
-        author: manifest.author,
+        version: manifest.version || "1.0.0",
+        author: authorName,
         manifest: manifest as any,
         permissions: manifest.permissions || [],
         lastSyncedAt: new Date(),
