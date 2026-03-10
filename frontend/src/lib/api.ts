@@ -91,6 +91,16 @@ export const api = {
       request<any>(`/projects/${id}/repos`, { method: "POST", body: JSON.stringify({ repositoryId }) }),
     removeRepo: (id: string, repoId: string) =>
       request<any>(`/projects/${id}/repos/${repoId}`, { method: "DELETE" }),
+    getEmbedConfig: (id: string) => request<any>(`/projects/${id}/embed-config`),
+    updateEmbedConfig: (id: string, body: any) => request<any>(`/projects/${id}/embed-config`, { method: "PUT", body: JSON.stringify(body) }),
+    listSubmissions: (id: string, status?: string) => {
+      const params = status ? `?status=${status}` : "";
+      return request<any>(`/projects/${id}/submissions${params}`);
+    },
+    approveSubmission: (id: string, subId: string, repositoryId: string) =>
+      request<any>(`/projects/${id}/submissions/${subId}/approve`, { method: "POST", body: JSON.stringify({ repositoryId }) }),
+    rejectSubmission: (id: string, subId: string) =>
+      request<any>(`/projects/${id}/submissions/${subId}/reject`, { method: "POST" }),
     documents: {
       list: (id: string) => request<any[]>(`/projects/${id}/documents`),
       create: (id: string, body: { title: string; content?: string }) =>

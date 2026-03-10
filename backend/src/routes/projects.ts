@@ -1,5 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
+import type { UpdateEmbedConfigInput } from "@autosoftware/shared";
 import { prisma } from "../db.js";
+import { schedulerService } from "../services/scheduler.js";
 
 export const projectRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", (app as any).requireAuth);
@@ -338,6 +340,133 @@ export const projectRoutes: FastifyPluginAsync = async (app) => {
 
       await prisma.projectDocument.delete({ where: { id: doc.id } });
       return { data: { success: true } };
+    }
+  );
+
+  // Get embed config
+  app.get<{ Params: { id: string } }>("/:id/embed-config", async (request, reply) => {
+    const project = await prisma.project.findFirst({
+      where: { id: request.params.id, userId: request.userId },
+    });
+    if (!project) return reply.code(404).send({ error: { message: "Project not found" } });
+
+    let config = await prisma.embedConfig.findUnique({
+      where: { projectId: project.id },
+    });
+
+    if (!config) {
+      config = await prisma.embedConfig.create({
+        data: { projectId: project.id },
+      });
+    }
+
+    return { data: config };
+  });
+
+  // Update embed config
+  app.put<{ Params: { id: string }; Body: UpdateEmbedConfigInput }>(
+    "/:id/embed-config",
+    async (request, reply) => {
+      const project = await prisma.project.findFirst({
+        where: { id: request.params.id, userId: request.userId },
+      });
+      if (!project) return reply.code(404).send({ error: { message: "Project not found" } });
+
+      const config = await prisma.embedConfig.upsert({
+        where: { projectId: project.id },
+        create: { projectId: project.id, ...request.body },
+        update: request.body,
+      });
+
+      return { data: config };
+    }
+  );
+
+  // List embed submissions
+  app.get<{ Params: { id: string }; Querystring: { status?: string } }>(
+    "/:id/submissions",
+    async (request, reply) => {
+      const project = await prisma.project.findFirst({
+        where: { id: request.params.id, userId: request.userId },
+      });
+      if (!project) return reply.code(404).send({ error: { message: "Project not found" } });
+
+      const where: any = { projectId: project.id };
+      if (request.query.status) {
+        where.screeningStatus = request.query.status;
+      }
+
+      const submissions = await prisma.embedSubmission.findMany({
+        where,
+        include: { questions: { orderBy: { sortOrder: "asc" } } },
+        orderBy: { createdAt: "desc" },
+      });
+
+      return { data: submissions };
+    }
+  );
+
+  // Approve submission → convert to task
+  app.post<{ Params: { id: string; subId: string }; Body: { repositoryId: string } }>(
+    "/:id/submissions/:subId/approve",
+    async (request, reply) => {
+      const project = await prisma.project.findFirst({
+        where: { id: request.params.id, userId: request.userId },
+        include: { repositories: { select: { repositoryId: true } } },
+      });
+      if (!project) return reply.code(404).send({ error: { message: "Project not found" } });
+
+      const submission = await prisma.embedSubmission.findFirst({
+        where: { id: request.params.subId, projectId: project.id },
+      });
+      if (!submission) return reply.code(404).send({ error: { message: "Submission not found" } });
+      if (submission.taskId) return reply.code(400).send({ error: { message: "Already converted" } });
+
+      const { repositoryId } = request.body;
+      const repoInProject = project.repositories.some((r) => r.repositoryId === repositoryId);
+      if (!repoInProject) return reply.code(400).send({ error: { message: "Repository not in project" } });
+
+      const task = await prisma.task.create({
+        data: {
+          repositoryId,
+          userId: request.userId,
+          projectId: project.id,
+          title: submission.title,
+          description: submission.description,
+          type: "feature",
+          priority: "medium",
+          status: "planning",
+          source: "embed",
+          metadata: { embedSubmissionId: submission.id },
+        },
+      });
+
+      await prisma.embedSubmission.update({
+        where: { id: submission.id },
+        data: { screeningStatus: "approved", taskId: task.id },
+      });
+
+      await schedulerService.queueTaskPlanning(task.id);
+
+      return { data: { task, submission: { ...submission, screeningStatus: "approved", taskId: task.id } } };
+    }
+  );
+
+  // Reject submission
+  app.post<{ Params: { id: string; subId: string } }>(
+    "/:id/submissions/:subId/reject",
+    async (request, reply) => {
+      const project = await prisma.project.findFirst({
+        where: { id: request.params.id, userId: request.userId },
+      });
+      if (!project) return reply.code(404).send({ error: { message: "Project not found" } });
+
+      const submission = await prisma.embedSubmission.update({
+        where: { id: request.params.subId, projectId: project.id },
+        data: { screeningStatus: "rejected" },
+      });
+
+      return { data: submission };
     }
   );
 };
