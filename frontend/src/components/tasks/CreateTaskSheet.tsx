@@ -114,7 +114,10 @@ export function CreateTaskSheet({ open, onOpenChange }: CreateTaskSheetProps) {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="sm:max-w-md overflow-y-auto">
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-md overflow-y-auto safe-area-bottom"
+      >
         <SheetHeader>
           <SheetTitle>Create Task</SheetTitle>
           <SheetDescription>
@@ -122,7 +125,7 @@ export function CreateTaskSheet({ open, onOpenChange }: CreateTaskSheetProps) {
           </SheetDescription>
         </SheetHeader>
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4 pb-6">
           <div className="space-y-2">
             <Label htmlFor="repository">Repository</Label>
             <Popover open={repoOpen} onOpenChange={setRepoOpen}>
@@ -236,20 +239,21 @@ export function CreateTaskSheet({ open, onOpenChange }: CreateTaskSheetProps) {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          {/* Stack on very small screens, side-by-side otherwise */}
+          <div className="grid grid-cols-1 xs:grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Type</Label>
               <Select
                 value={form.type}
                 onValueChange={(v) => setForm({ ...form, type: v })}
               >
-                <SelectTrigger>
+                <SelectTrigger className="min-h-[44px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {["improvement", "bugfix", "feature", "refactor", "security"].map(
                     (t) => (
-                      <SelectItem key={t} value={t}>
+                      <SelectItem key={t} value={t} className="min-h-[44px]">
                         {t.charAt(0).toUpperCase() + t.slice(1)}
                       </SelectItem>
                     )
@@ -263,12 +267,12 @@ export function CreateTaskSheet({ open, onOpenChange }: CreateTaskSheetProps) {
                 value={form.priority}
                 onValueChange={(v) => setForm({ ...form, priority: v })}
               >
-                <SelectTrigger>
+                <SelectTrigger className="min-h-[44px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {["low", "medium", "high", "critical"].map((p) => (
-                    <SelectItem key={p} value={p}>
+                    <SelectItem key={p} value={p} className="min-h-[44px]">
                       {p.charAt(0).toUpperCase() + p.slice(1)}
                     </SelectItem>
                   ))}
@@ -291,7 +295,7 @@ export function CreateTaskSheet({ open, onOpenChange }: CreateTaskSheetProps) {
 
           <Button
             type="submit"
-            className="w-full"
+            className="w-full min-h-[44px] text-base"
             disabled={!canSubmit || createMutation.isPending}
           >
             {createMutation.isPending ? "Creating..." : "Create Task"}

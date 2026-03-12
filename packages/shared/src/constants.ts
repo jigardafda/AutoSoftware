@@ -4,6 +4,7 @@ export const JOB_NAMES = {
   TASK_EXECUTE: "task-execute",
   EMBED_SCREEN: "embed-screen",
   EMBED_CONVERT: "embed-convert",
+  BATCH_PROCESS: "batch-process",
 } as const;
 
 export const DEFAULT_SCAN_INTERVAL_MINUTES = 60;

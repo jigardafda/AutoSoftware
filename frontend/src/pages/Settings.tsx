@@ -46,6 +46,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AddApiKeyDialog } from "@/components/settings/AddApiKeyDialog";
+import { PersonalizationSettings } from "@/components/settings/PersonalizationSettings";
 import { IntegrationsTab } from "@/components/integrations/IntegrationsTab";
 import { RefreshButton } from "@/components/RefreshButton";
 import { toast } from "sonner";
@@ -89,7 +90,47 @@ function ProviderIcon({ provider }: { provider: string }) {
 }
 
 function ProfileTab() {
-  const { user } = useAuth();
+  const { user, refetch } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
+
+  // Handle URL params for connection status
+  useEffect(() => {
+    const connected = searchParams.get("connected");
+    const error = searchParams.get("error");
+
+    if (connected) {
+      toast.success(`Successfully connected ${connected}`);
+      refetch();
+      // Clear the param
+      searchParams.delete("connected");
+      setSearchParams(searchParams, { replace: true });
+    }
+
+    if (error) {
+      const errorMessages: Record<string, string> = {
+        user_not_found: "User not found. Please log in again.",
+        account_linked_to_other_user: "This account is already linked to another user.",
+        auth_failed: "Authentication failed. Please try again.",
+      };
+      toast.error(errorMessages[error] || `Connection error: ${error}`);
+      searchParams.delete("error");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams, refetch]);
+
+  const handleDisconnect = async (provider: string) => {
+    setDisconnecting(provider);
+    try {
+      await api.auth.disconnect(provider);
+      toast.success(`Disconnected ${provider}`);
+      refetch();
+    } catch (err: any) {
+      toast.error(err.message || `Failed to disconnect ${provider}`);
+    } finally {
+      setDisconnecting(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -118,13 +159,14 @@ function ProfileTab() {
         <CardHeader>
           <CardTitle>Connected Providers</CardTitle>
           <CardDescription>
-            Manage your connected source code providers.
+            Manage your connected source code providers. Connect a provider to access your repositories.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             {["github", "gitlab", "bitbucket"].map((provider) => {
               const connected = user?.providers.includes(provider);
+              const isDisconnecting = disconnecting === provider;
               return (
                 <div
                   key={provider}
@@ -135,16 +177,31 @@ function ProfileTab() {
                     <span className="font-medium capitalize">{provider}</span>
                   </div>
                   {connected ? (
-                    <Badge
-                      variant="secondary"
-                      className="bg-green-500/10 text-green-500 border-green-500/20"
-                    >
-                      <Check className="h-3 w-3 mr-1" />
-                      Connected
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant="secondary"
+                        className="bg-green-500/10 text-green-500 border-green-500/20"
+                      >
+                        <Check className="h-3 w-3 mr-1" />
+                        Connected
+                      </Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                        onClick={() => handleDisconnect(provider)}
+                        disabled={isDisconnecting}
+                      >
+                        {isDisconnecting ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          "Disconnect"
+                        )}
+                      </Button>
+                    </div>
                   ) : (
                     <Button variant="outline" size="sm" asChild>
-                      <a href={`/api/auth/login/${provider}`}>Connect</a>
+                      <a href={`/api/auth/connect/${provider}`}>Connect</a>
                     </Button>
                   )}
                 </div>
@@ -1156,7 +1213,7 @@ function SettingsSkeleton() {
   );
 }
 
-const VALID_TABS = ["profile", "preferences", "api", "integrations"] as const;
+const VALID_TABS = ["profile", "preferences", "personalization", "api", "integrations"] as const;
 
 export function SettingsPage() {
   const { loading } = useAuth();
@@ -1185,6 +1242,7 @@ export function SettingsPage() {
         <TabsList>
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="preferences">Preferences</TabsTrigger>
+          <TabsTrigger value="personalization">Personalization</TabsTrigger>
           <TabsTrigger value="api">API</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
         </TabsList>
@@ -1195,6 +1253,10 @@ export function SettingsPage() {
 
         <TabsContent value="preferences">
           <PreferencesTab />
+        </TabsContent>
+
+        <TabsContent value="personalization">
+          <PersonalizationSettings />
         </TabsContent>
 
         <TabsContent value="api">

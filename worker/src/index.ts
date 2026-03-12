@@ -11,8 +11,13 @@ import { handleEmbedConversion } from "./handlers/embed-convert.js";
 import { JOB_NAMES } from "@autosoftware/shared";
 import { setBoss } from "./boss.js";
 import { mkdir } from "fs/promises";
+import { initEventNotifier } from "./services/event-notifier.js";
 
 await mkdir(config.workDir, { recursive: true });
+
+// Initialize event notifier for real-time WebSocket updates
+initEventNotifier();
+console.log("Event notifier initialized for real-time updates");
 
 const boss = new PgBoss(config.databaseUrl);
 
@@ -31,9 +36,9 @@ await boss.createQueue(JOB_NAMES.TASK_EXECUTE, { expireInSeconds: HOUR_IN_SECOND
 await boss.createQueue(JOB_NAMES.EMBED_SCREEN, { expireInSeconds: HOUR_IN_SECONDS });
 await boss.createQueue(JOB_NAMES.EMBED_CONVERT, { expireInSeconds: HOUR_IN_SECONDS });
 
-await boss.work(JOB_NAMES.REPO_SCAN, { localConcurrency: 1 }, handleRepoScan as any);
+await boss.work(JOB_NAMES.REPO_SCAN, { localConcurrency: 2 }, handleRepoScan as any);
 await boss.work(JOB_NAMES.TASK_PLAN, { localConcurrency: 1 }, handleTaskPlanning as any);
-await boss.work(JOB_NAMES.TASK_EXECUTE, { localConcurrency: 1 }, handleTaskExecution as any);
+await boss.work(JOB_NAMES.TASK_EXECUTE, { localConcurrency: 5 }, handleTaskExecution as any);
 await boss.work(JOB_NAMES.EMBED_SCREEN, { localConcurrency: 2 }, handleEmbedScreening as any);
 await boss.work(JOB_NAMES.EMBED_CONVERT, { localConcurrency: 1 }, handleEmbedConversion as any);
 

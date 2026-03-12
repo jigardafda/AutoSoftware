@@ -24,12 +24,13 @@ export const scanRoutes: FastifyPluginAsync = async (app) => {
     const scan = await prisma.scanResult.findUnique({
       where: { id: request.params.id },
       include: {
-        repository: { select: { userId: true, fullName: true, provider: true } },
+        repository: { select: { userId: true, fullName: true, provider: true, defaultBranch: true } },
         tasks: {
           select: { id: true, title: true, type: true, priority: true, status: true },
           orderBy: { createdAt: "asc" },
         },
         logs: { orderBy: { createdAt: "asc" } },
+        codeAnalysis: true, // Include full code analysis data
       },
     });
     if (!scan || scan.repository.userId !== request.userId) {

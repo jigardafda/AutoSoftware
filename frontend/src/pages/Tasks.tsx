@@ -1,11 +1,11 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { Pagination, paginate } from "@/components/Pagination";
 import { useSort, type SortConfig } from "@/hooks/useSort";
-import { Plus, Loader2, CheckCircle2, BrainCircuit, Trash2 } from "lucide-react";
+import { Plus, Loader2, CheckCircle2, BrainCircuit, Trash2, Layers, Play, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RefreshButton } from "@/components/RefreshButton";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TaskFilters } from "@/components/tasks/TaskFilters";
 import { TaskTable } from "@/components/tasks/TaskTable";
 import { CreateTaskSheet } from "@/components/tasks/CreateTaskSheet";
+import { CreateBatchDialog } from "@/components/tasks/CreateBatchDialog";
 import { EmptyState } from "@/components/EmptyState";
 import {
   AlertDialog,
@@ -36,12 +37,24 @@ const TASK_SORT_CONFIG: SortConfig = {
 
 export function Tasks() {
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [page, setPage] = useState(0);
+
+  // Handle navigation state for opening create sheet from mobile FAB
+  useEffect(() => {
+    const state = location.state as { openCreateSheet?: boolean; description?: string } | null;
+    if (state?.openCreateSheet) {
+      setSheetOpen(true);
+      // Clear the state to prevent reopening on refresh
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, location.pathname, navigate]);
 
   // Build query params — only include non-"all" filters
   const queryParams = useMemo(() => {
@@ -160,10 +173,58 @@ export function Tasks() {
     setDeleteDialogOpen(false);
   }, [selectedIds, bulkDeleteMutation]);
 
+  const bulkExecuteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.tasks.bulkExecute(ids),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      setSelectedIds(new Set());
+      toast.success(`${data.executed} task${data.executed === 1 ? "" : "s"} queued for execution`);
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to execute tasks");
+    },
+  });
+
+  const bulkRetryMutation = useMutation({
+    mutationFn: (ids: string[]) => api.tasks.bulkRetry(ids),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      setSelectedIds(new Set());
+      toast.success(`${data.retried} task${data.retried === 1 ? "" : "s"} queued for retry`);
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to retry tasks");
+    },
+  });
+
+  const handleExecuteSelected = useCallback(() => {
+    const executable = tasks.filter(
+      (t: any) => selectedIds.has(t.id) && t.status === "planned"
+    );
+    bulkExecuteMutation.mutate(executable.map((t: any) => t.id));
+  }, [selectedIds, tasks, bulkExecuteMutation]);
+
+  const handleRetrySelected = useCallback(() => {
+    const retryable = tasks.filter(
+      (t: any) => selectedIds.has(t.id) && ["failed", "cancelled"].includes(t.status)
+    );
+    bulkRetryMutation.mutate(retryable.map((t: any) => t.id));
+  }, [selectedIds, tasks, bulkRetryMutation]);
+
+  // Count tasks in different states for bulk action buttons
+  const selectedTaskStates = useMemo(() => {
+    const selected = tasks.filter((t: any) => selectedIds.has(t.id));
+    return {
+      planned: selected.filter((t: any) => t.status === "planned").length,
+      failed: selected.filter((t: any) => ["failed", "cancelled"].includes(t.status)).length,
+      plannable: selected.filter((t: any) => ["pending", "planned", "failed"].includes(t.status)).length,
+    };
+  }, [tasks, selectedIds]);
+
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Header - responsive layout */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <h2 className="text-lg font-semibold">Tasks</h2>
           {!isLoading && (
@@ -173,10 +234,23 @@ export function Tasks() {
           )}
           <RefreshButton queryKeys={[["tasks", queryParams]]} />
         </div>
-        <Button size="sm" onClick={() => setSheetOpen(true)}>
-          <Plus className="h-4 w-4 mr-1" />
-          New Task
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setBatchDialogOpen(true)}
+            className="flex-1 sm:flex-none min-h-[44px] sm:min-h-0"
+          >
+            <Layers className="h-4 w-4 mr-1" />
+            <span className="hidden sm:inline">Batch Operation</span>
+            <span className="sm:hidden">Batch</span>
+          </Button>
+          <Button size="sm" onClick={() => setSheetOpen(true)} className="flex-1 sm:flex-none min-h-[44px] sm:min-h-0">
+            <Plus className="h-4 w-4 mr-1" />
+            <span className="hidden sm:inline">New Task</span>
+            <span className="sm:hidden">New</span>
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -186,54 +260,92 @@ export function Tasks() {
         onClear={handleFilterClear}
       />
 
-      {/* Bulk actions bar */}
+      {/* Bulk actions bar - scrollable on mobile */}
       {selectedIds.size > 0 && (
-        <div className="flex items-center justify-between rounded-md border bg-muted/50 px-3 py-2 text-sm">
-          <span className="text-muted-foreground">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-md border bg-muted/50 px-3 py-2 text-sm">
+          <span className="text-muted-foreground font-medium">
             {selectedIds.size} selected
           </span>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handlePlanSelected}
-              disabled={planMutation.isPending}
-            >
-              {planMutation.isPending ? (
-                <Loader2 className="h-3 w-3 animate-spin mr-1" />
-              ) : (
-                <BrainCircuit className="h-3 w-3 mr-1" />
-              )}
-              Plan Selected
-            </Button>
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 -mx-1 px-1">
+            {selectedTaskStates.plannable > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handlePlanSelected}
+                disabled={planMutation.isPending}
+                className="shrink-0"
+              >
+                {planMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                ) : (
+                  <BrainCircuit className="h-3 w-3 mr-1" />
+                )}
+                Plan ({selectedTaskStates.plannable})
+              </Button>
+            )}
+            {selectedTaskStates.planned > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExecuteSelected}
+                disabled={bulkExecuteMutation.isPending}
+                className="shrink-0"
+              >
+                {bulkExecuteMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                ) : (
+                  <Play className="h-3 w-3 mr-1" />
+                )}
+                Execute ({selectedTaskStates.planned})
+              </Button>
+            )}
+            {selectedTaskStates.failed > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRetrySelected}
+                disabled={bulkRetryMutation.isPending}
+                className="shrink-0"
+              >
+                {bulkRetryMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                ) : (
+                  <RotateCcw className="h-3 w-3 mr-1" />
+                )}
+                Retry ({selectedTaskStates.failed})
+              </Button>
+            )}
             <Button
               variant="destructive"
               size="sm"
               onClick={handleCancelSelected}
               disabled={cancelMutation.isPending}
+              className="shrink-0"
             >
               {cancelMutation.isPending ? (
                 <Loader2 className="h-3 w-3 animate-spin mr-1" />
               ) : null}
-              Cancel Selected
+              Cancel
             </Button>
             <Button
               variant="destructive"
               size="sm"
               onClick={() => setDeleteDialogOpen(true)}
               disabled={bulkDeleteMutation.isPending}
+              className="shrink-0"
             >
               {bulkDeleteMutation.isPending ? (
                 <Loader2 className="h-3 w-3 animate-spin mr-1" />
               ) : (
                 <Trash2 className="h-3 w-3 mr-1" />
               )}
-              Delete Selected
+              Delete
             </Button>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setSelectedIds(new Set())}
+              className="shrink-0"
             >
               Deselect
             </Button>
@@ -288,6 +400,9 @@ export function Tasks() {
             onRowClick={handleRowClick}
             sort={sort}
             onSort={onSort}
+            onDelete={(id) => bulkDeleteMutation.mutate([id])}
+            onRetry={(id) => bulkRetryMutation.mutate([id])}
+            onExecute={(id) => bulkExecuteMutation.mutate([id])}
           />
           <Pagination page={page} total={tasks.length} onPageChange={setPage} />
         </>
@@ -295,6 +410,9 @@ export function Tasks() {
 
       {/* Create Sheet */}
       <CreateTaskSheet open={sheetOpen} onOpenChange={setSheetOpen} />
+
+      {/* Batch Operation Dialog */}
+      <CreateBatchDialog open={batchDialogOpen} onOpenChange={setBatchDialogOpen} />
 
       {/* Bulk Delete Confirmation */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

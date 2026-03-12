@@ -54,16 +54,17 @@ Return ONLY valid JSON, no other text.`;
 
       const { result, usage } = await simpleQuery(systemPrompt, text, { model });
 
-      // Record usage if using a stored API key
-      if (auth.apiKeyId) {
-        await recordUsage(
-          auth.apiKeyId,
-          model,
-          usage.inputTokens,
-          usage.outputTokens,
-          "command"
-        );
-      }
+      // Record usage (always, for both OAuth and API key)
+      await recordUsage({
+        userId: request.userId,
+        apiKeyId: auth.apiKeyId,
+        authType: auth.authType,
+        model,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        costUsd: usage.estimatedCostUsd,
+        source: "command",
+      });
 
       const parsed = JSON.parse(result);
       return { data: parsed };
@@ -135,16 +136,17 @@ Be concise and helpful. Use markdown for formatting.`;
           if (!chunk.done) {
             reply.raw.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
           } else {
-            // Record usage at the end if using a stored API key
-            if (auth.apiKeyId) {
-              await recordUsage(
-                auth.apiKeyId,
-                model,
-                chunk.usage.inputTokens,
-                chunk.usage.outputTokens,
-                "chat"
-              );
-            }
+            // Record usage (always, for both OAuth and API key)
+            await recordUsage({
+              userId: request.userId,
+              apiKeyId: auth.apiKeyId,
+              authType: auth.authType,
+              model,
+              inputTokens: chunk.usage.inputTokens,
+              outputTokens: chunk.usage.outputTokens,
+              costUsd: chunk.usage.estimatedCostUsd,
+              source: "ai_chat",
+            });
           }
         }
 

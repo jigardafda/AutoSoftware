@@ -13,8 +13,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
 
 interface ConnectRepoDialogProps {
   open: boolean;
@@ -74,7 +72,7 @@ export function ConnectRepoDialog({ open, onOpenChange }: ConnectRepoDialogProps
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Connect Repository</DialogTitle>
           <DialogDescription>
@@ -130,57 +128,53 @@ export function ConnectRepoDialog({ open, onOpenChange }: ConnectRepoDialogProps
                 {search ? "No matching repositories found." : "No repositories available."}
               </p>
             ) : (
-              <ScrollArea className="max-h-[320px]">
-                <div className="space-y-1">
-                  {filteredRepos.map((repo: any) => {
-                    const isConnected = connectedIds.has(
-                      `${selectedProvider}:${repo.id}`
-                    );
-                    return (
-                      <div
-                        key={repo.id}
-                        className={cn(
-                          "flex items-center justify-between px-3 py-2 rounded-md hover:bg-muted/50 transition-colors"
-                        )}
-                      >
-                        <div className="min-w-0 flex-1 mr-3">
-                          <p className="text-sm font-medium truncate">
-                            {repo.fullName}
+              <div className="max-h-[320px] overflow-y-auto space-y-1">
+                {filteredRepos.map((repo: any) => {
+                  const isConnected = connectedIds.has(
+                    `${selectedProvider}:${repo.id}`
+                  );
+                  return (
+                    <div
+                      key={repo.id}
+                      className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">
+                          {repo.fullName}
+                        </p>
+                        {repo.description && (
+                          <p className="text-xs text-muted-foreground truncate">
+                            {repo.description}
                           </p>
-                          {repo.description && (
-                            <p className="text-xs text-muted-foreground truncate">
-                              {repo.description}
-                            </p>
-                          )}
-                        </div>
-                        {isConnected ? (
-                          <span className="flex items-center gap-1 text-xs text-green-500 shrink-0">
-                            <Check className="h-3.5 w-3.5" />
-                            Connected
-                          </span>
-                        ) : (
-                          <Button
-                            size="sm"
-                            className="h-7 text-xs shrink-0"
-                            disabled={connectMutation.isPending}
-                            onClick={() =>
-                              connectMutation.mutate({
-                                provider: selectedProvider,
-                                providerRepoId: repo.id,
-                                fullName: repo.fullName,
-                                cloneUrl: repo.cloneUrl,
-                                defaultBranch: repo.defaultBranch,
-                              })
-                            }
-                          >
-                            Connect
-                          </Button>
                         )}
                       </div>
-                    );
-                  })}
-                </div>
-              </ScrollArea>
+                      {isConnected ? (
+                        <span className="flex items-center gap-1 text-xs text-green-500 shrink-0">
+                          <Check className="h-3.5 w-3.5" />
+                          Connected
+                        </span>
+                      ) : (
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs shrink-0"
+                          disabled={connectMutation.isPending}
+                          onClick={() =>
+                            connectMutation.mutate({
+                              provider: selectedProvider,
+                              providerRepoId: repo.id,
+                              fullName: repo.fullName,
+                              cloneUrl: repo.cloneUrl,
+                              defaultBranch: repo.defaultBranch,
+                            })
+                          }
+                        >
+                          Connect
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </>
         )}

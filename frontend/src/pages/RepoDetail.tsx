@@ -58,6 +58,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Pagination, paginate } from "@/components/Pagination";
 import { BranchSelect } from "@/components/BranchSelect";
 import { RefreshButton } from "@/components/RefreshButton";
+import { ScanAnalysisDashboard } from "@/components/scan-analysis";
 import {
   AreaChart,
   Area,
@@ -73,6 +74,7 @@ import {
   Pie,
   Legend,
 } from "recharts";
+import { ProjectMemoryPanel } from "@/components/memory";
 
 function relativeTime(dateStr: string | null): string {
   if (!dateStr) return "Never";
@@ -194,7 +196,7 @@ export function RepoDetail() {
   const [defaultBranchDialogOpen, setDefaultBranchDialogOpen] = useState(false);
   const [newDefaultBranch, setNewDefaultBranch] = useState<string | null>(null);
 
-  const VALID_TABS = ["overview", "files", "tasks", "scans", "usage"] as const;
+  const VALID_TABS = ["overview", "analysis", "files", "tasks", "scans", "usage", "memory"] as const;
   const tab = useMemo(() => {
     const t = searchParams.get("tab");
     return VALID_TABS.includes(t as any) ? t! : "overview";
@@ -533,10 +535,19 @@ export function RepoDetail() {
       <Tabs value={tab} onValueChange={(v) => setSearchParams({ tab: v }, { replace: true })} className="w-full">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="analysis" className="gap-1">
+            Analysis
+            {stats.latestAnalysis?.codeAnalysis && (
+              <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0 bg-blue-500/15 text-blue-500">
+                New
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="files">Files</TabsTrigger>
           <TabsTrigger value="tasks">Tasks ({totalTasks})</TabsTrigger>
           <TabsTrigger value="scans">Scans ({totalScans})</TabsTrigger>
           <TabsTrigger value="usage">Usage</TabsTrigger>
+          <TabsTrigger value="memory">Memory</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -642,6 +653,64 @@ export function RepoDetail() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Analysis Tab */}
+        <TabsContent value="analysis" className="space-y-4">
+          {stats.latestAnalysis ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold">Code Analysis</h3>
+                  <p className="text-sm text-muted-foreground">
+                    From scan completed {stats.latestAnalysis.completedAt ? new Date(stats.latestAnalysis.completedAt).toLocaleDateString() : "recently"}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate(`/scans/${stats.latestAnalysis.scanId}`)}
+                >
+                  View Full Scan
+                </Button>
+              </div>
+              <ScanAnalysisDashboard
+                codeAnalysis={stats.latestAnalysis.codeAnalysis}
+                languageProfile={stats.latestAnalysis.languageProfile as any}
+                primaryLanguage={stats.latestAnalysis.primaryLanguage}
+              />
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="py-12">
+                <div className="flex flex-col items-center justify-center text-center">
+                  <BrainCircuit className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                  <h3 className="text-lg font-medium mb-2">No Analysis Available</h3>
+                  <p className="text-sm text-muted-foreground max-w-md">
+                    Run a scan to generate code analysis including architecture patterns,
+                    dependencies, dead code detection, duplications, and performance insights.
+                  </p>
+                  <Button
+                    className="mt-4"
+                    onClick={() => scanMutation.mutate()}
+                    disabled={scanMutation.isPending || repo?.status === "scanning"}
+                  >
+                    {scanMutation.isPending || repo?.status === "scanning" ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Scanning...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4 mr-2" />
+                        Run Scan
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* Files Tab */}
@@ -1122,6 +1191,15 @@ export function RepoDetail() {
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        {/* Memory Tab */}
+        <TabsContent value="memory" className="space-y-4">
+          <ProjectMemoryPanel
+            repositoryId={id}
+            onNavigateToTask={(taskId) => navigate(`/tasks/${taskId}`)}
+            defaultCollapsed={false}
+          />
         </TabsContent>
       </Tabs>
     </div>

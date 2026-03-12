@@ -8,6 +8,7 @@ import {
   Minus,
   MessageSquare,
   GitBranch,
+  Gauge,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +22,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SortableHeader } from "@/components/SortableHeader";
+import { TaskListMobile } from "@/components/tasks/TaskCardMobile";
+import { useIsMobile } from "@/hooks/useMediaQuery";
 import type { SortState } from "@/hooks/useSort";
 
 interface TaskTableProps {
@@ -31,6 +34,9 @@ interface TaskTableProps {
   onRowClick: (task: any) => void;
   sort: SortState;
   onSort: (key: string) => void;
+  onDelete?: (id: string) => void;
+  onRetry?: (id: string) => void;
+  onExecute?: (id: string) => void;
 }
 
 function relativeTime(date: string): string {
@@ -89,6 +95,77 @@ function StatusIcon({ status }: { status: string }) {
   return <Icon className={cn("h-4 w-4", config.className)} />;
 }
 
+function TaskProgressBar({ task }: { task: any }) {
+  // Calculate progress based on task steps
+  const steps = task.steps || [];
+  if (steps.length === 0) {
+    // Show status-based progress for tasks without steps
+    if (task.status === "completed") return <span className="text-xs text-green-500">100%</span>;
+    if (task.status === "failed" || task.status === "cancelled") return <span className="text-xs text-muted-foreground">-</span>;
+    if (task.status === "pending") return <span className="text-xs text-muted-foreground">0%</span>;
+    if (task.status === "in_progress" || task.status === "planning") {
+      return (
+        <div className="flex items-center gap-1.5">
+          <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
+            <div className="h-full bg-blue-500 animate-pulse rounded-full w-1/2" />
+          </div>
+        </div>
+      );
+    }
+    return <span className="text-xs text-muted-foreground">-</span>;
+  }
+
+  const completedSteps = steps.filter((s: any) => s.status === "completed").length;
+  const progress = Math.round((completedSteps / steps.length) * 100);
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
+        <div
+          className={cn(
+            "h-full rounded-full transition-all",
+            progress === 100 ? "bg-green-500" : "bg-blue-500"
+          )}
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <span className="text-[10px] text-muted-foreground w-6">{progress}%</span>
+    </div>
+  );
+}
+
+function ConfidenceIndicator({ score }: { score?: number | null }) {
+  if (score === undefined || score === null) {
+    return <span className="text-xs text-muted-foreground">-</span>;
+  }
+
+  const normalizedScore = Math.min(10, Math.max(0, score));
+  const percentage = normalizedScore * 10;
+
+  let color = "text-red-500";
+  let bgColor = "bg-red-500";
+  if (normalizedScore >= 8) {
+    color = "text-green-500";
+    bgColor = "bg-green-500";
+  } else if (normalizedScore >= 6) {
+    color = "text-yellow-500";
+    bgColor = "bg-yellow-500";
+  } else if (normalizedScore >= 4) {
+    color = "text-orange-500";
+    bgColor = "bg-orange-500";
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <Gauge className={cn("h-3.5 w-3.5", color)} />
+      <div className="w-8 h-1.5 bg-muted rounded-full overflow-hidden">
+        <div className={cn("h-full rounded-full", bgColor)} style={{ width: `${percentage}%` }} />
+      </div>
+      <span className={cn("text-[10px] font-medium", color)}>{normalizedScore.toFixed(1)}</span>
+    </div>
+  );
+}
+
 export function TaskTable({
   tasks,
   selectedIds,
@@ -97,10 +174,31 @@ export function TaskTable({
   onRowClick,
   sort,
   onSort,
+  onDelete,
+  onRetry,
+  onExecute,
 }: TaskTableProps) {
+  const isMobile = useIsMobile();
   const allSelected = tasks.length > 0 && selectedIds.size === tasks.length;
   const someSelected = selectedIds.size > 0 && !allSelected;
 
+  // Render mobile card view
+  if (isMobile) {
+    return (
+      <TaskListMobile
+        tasks={tasks}
+        selectedIds={selectedIds}
+        onSelect={onSelect}
+        onDelete={onDelete}
+        onRetry={onRetry}
+        onExecute={onExecute}
+        onClick={onRowClick}
+        showCheckbox={selectedIds.size > 0}
+      />
+    );
+  }
+
+  // Render desktop table view
   return (
     <div className="overflow-x-auto rounded-md border">
       <Table>
@@ -124,6 +222,8 @@ export function TaskTable({
             <SortableHeader label="Type" sortKey="type" sort={sort} onSort={onSort} className="w-24" />
             <SortableHeader label="Priority" sortKey="priority" sort={sort} onSort={onSort} className="w-24" />
             <SortableHeader label="Source" sortKey="source" sort={sort} onSort={onSort} className="w-16" />
+            <TableHead className="w-20">Progress</TableHead>
+            <SortableHeader label="Confidence" sortKey="confidenceScore" sort={sort} onSort={onSort} className="w-24" />
             <TableHead className="w-10">PR</TableHead>
             <SortableHeader label="Created" sortKey="createdAt" sort={sort} onSort={onSort} className="w-20" />
           </TableRow>
@@ -132,7 +232,7 @@ export function TaskTable({
           {tasks.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={9}
+                colSpan={11}
                 className="h-24 text-center text-muted-foreground"
               >
                 No tasks found.
@@ -204,6 +304,12 @@ export function TaskTable({
                   <span className="text-xs text-muted-foreground">
                     {task.source === "auto_scan" ? "Auto" : "Manual"}
                   </span>
+                </TableCell>
+                <TableCell>
+                  <TaskProgressBar task={task} />
+                </TableCell>
+                <TableCell>
+                  <ConfidenceIndicator score={task.confidenceScore} />
                 </TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   {task.pullRequestUrl ? (

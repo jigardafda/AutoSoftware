@@ -41,6 +41,7 @@ enum TaskStatus {
   pending
   in_progress
   completed
+  partial_success // Task completed with some parts not fixable
   failed
   cancelled
 }
@@ -50,6 +51,15 @@ enum TaskSource {
   manual
   external_import
   embed
+  ai_assistant
+}
+
+enum RefactorType {
+  rename // Rename symbol (function, class, variable)
+  move // Move file/module to different location
+  extract // Extract code into new function/class/module
+  inline // Inline function/variable
+  restructure // Large-scale restructuring across multiple files
 }
 
 enum IntegrationProvider {
@@ -87,7 +97,7 @@ enum ScanStatus {
   completed
   failed
   cancelled
-  skipped       // Skipped because another scan is already active for this repo+branch
+  skipped // Skipped because another scan is already active for this repo+branch
 }
 
 enum ScanSource {
@@ -119,6 +129,39 @@ model User {
   integrations       Integration[]
   pluginMarketplaces PluginMarketplace[]
   installedPlugins   InstalledPlugin[]
+  presence           UserPresence?
+  conversations      Conversation[]
+  voiceSettings      VoiceSettings?
+  mcpServers         McpServer[]
+  dependencyAlerts   DependencyAlert[]
+
+  // Collaborative Planning
+  approachComments     ApproachComment[]
+  approachVotes        ApproachVote[]
+  planningCursors      PlanningCursor[]
+  mentionNotifications MentionNotification[]
+
+  // Proactive Suggestions
+  proactiveSuggestions ProactiveSuggestion[]
+
+  // Project Memory
+  projectMemories ProjectMemory[]
+
+  // Zone Triggers
+  triggers Trigger[]
+
+  // Team Coordination
+  teamActivities TeamActivity[]
+  sentPings      TeamPing[]     @relation("PingSender")
+  receivedPings  TeamPing[]     @relation("PingReceiver")
+
+  // Push Notifications
+  notifications           Notification[]
+  pushSubscriptions       PushSubscription[]
+  notificationPreferences NotificationPreference?
+
+  // Spatial Canvas
+  canvasStates CanvasState[]
 }
 
 model Account {
@@ -139,25 +182,34 @@ model Account {
 }
 
 model Repository {
-  id             String     @id @default(cuid())
+  id             String        @id @default(cuid())
   userId         String
   provider       OAuthProvider
   providerRepoId String
   fullName       String
   cloneUrl       String
-  defaultBranch  String     @default("main")
-  isActive       Boolean    @default(true)
-  scanInterval   Int        @default(60)
+  defaultBranch  String        @default("main")
+  isActive       Boolean       @default(true)
+  scanInterval   Int           @default(60)
   lastScannedAt  DateTime?
-  status         RepoStatus @default(idle)
-  settings       Json       @default("{}")
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+  status         RepoStatus    @default(idle)
+  settings       Json          @default("{}")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tasks               Task[]
-  scanResults         ScanResult[]
-  projectRepositories ProjectRepository[]
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks                Task[]
+  scanResults          ScanResult[]
+  projectRepositories  ProjectRepository[]
+  conventions          ProjectConvention[]
+  batchOperationTasks  BatchOperationTask[]
+  dependencySnapshots  DependencySnapshot[]
+  dependencyAlerts     DependencyAlert[]
+  codeHealthSnapshots  CodeHealthSnapshot[]
+  codeHotspots         CodeHotspot[]
+  webhookConfigs       WebhookConfig[]
+  proactiveSuggestions ProactiveSuggestion[]
+  projectMemories      ProjectMemory[]
 
   @@unique([provider, providerRepoId])
 }
@@ -173,7 +225,7 @@ model Task {
   priority          TaskPriority @default(medium)
   status            TaskStatus   @default(pending)
   source            TaskSource   @default(manual)
-  targetBranch      String?      // Target branch for worktree and PR base (defaults to repo.defaultBranch when null)
+  targetBranch      String? // Target branch for worktree and PR base (defaults to repo.defaultBranch when null)
   agentSessionId    String?
   pullRequestUrl    String?
   pullRequestStatus String?
@@ -182,31 +234,76 @@ model Task {
   updatedAt         DateTime     @updatedAt
   completedAt       DateTime?
 
-  scanResultId       String?
-  planningRound      Int      @default(0)
-  enhancedPlan       String?
-  affectedFiles      Json     @default("[]")
+  scanResultId  String?
+  planningRound Int           @default(0)
+  enhancedPlan  String?
+  affectedFiles Json          @default("[]") // List of files that will be modified
+  refactorType  RefactorType? // Type of refactoring operation (if applicable)
+  multiFileMode Boolean       @default(false) // True when changes span 10+ files
+
+  // Session forking - allows exploring alternative approaches
+  parentTaskId String? // Parent task this was forked from
+  forkReason   String? // Reason/description for this fork
+  forkDepth    Int     @default(0) // Depth in the fork tree (0 = root)
+
+  // Approach exploration - multiple implementation options
+  approaches       Json @default("[]") // Array of generated approaches
+  selectedApproach Int? // Index of the selected approach (0-based)
 
   // Usage tracking (always recorded, regardless of API key source)
-  inputTokens        Int      @default(0)
-  outputTokens       Int      @default(0)
-  estimatedCostUsd   Float    @default(0)
+  inputTokens      Int   @default(0)
+  outputTokens     Int   @default(0)
+  estimatedCostUsd Float @default(0)
 
-  repository         Repository          @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
-  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project            Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  scanResult         ScanResult?         @relation(fields: [scanResultId], references: [id], onDelete: SetNull)
-  planningQuestions  PlanningQuestion[]
-  externalLink       TaskExternalLink?
-  embedSubmission    EmbedSubmission?
-  logs               TaskLog[]
+  // Quality and analysis fields
+  confidenceScore     Float?
+  severityLevel       String?
+  falsePositiveRisk   Float?
+  architecturePattern String?
+  executionMode       String   @default("normal")
+  dryRunOutput        Json?
+  retryCount          Int      @default(0)
+  testsPassing        Boolean?
+  lintPassing         Boolean?
+
+  // Phase 2: Self-healing and test generation
+  healingAttempts    Int     @default(0) // Number of self-healing attempts made
+  healingMetadata    Json? // Detailed healing attempt history
+  testsGenerated     Boolean @default(false) // Whether tests were auto-generated
+  generatedTestPaths Json    @default("[]") // Paths to generated test files
+  partialFixDetails  Json? // Details about what couldn't be fixed
+  buildValidated     Boolean @default(false) // Whether build was validated after changes
+  changeBatchIds     Json    @default("[]") // IDs of change batches for rollback tracking
+
+  // Port allocation for concurrent task execution
+  allocatedPort Int?
+
+  repository           Repository            @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project              Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  scanResult           ScanResult?           @relation(fields: [scanResultId], references: [id], onDelete: SetNull)
+  parentTask           Task?                 @relation("TaskForks", fields: [parentTaskId], references: [id], onDelete: SetNull)
+  childForks           Task[]                @relation("TaskForks")
+  planningQuestions    PlanningQuestion[]
+  externalLink         TaskExternalLink?
+  embedSubmission      EmbedSubmission?
+  logs                 TaskLog[]
+  steps                TaskStep[]
+  executionLogs        TaskExecutionLog[]
+  codeChangeMetrics    CodeChangeMetrics?
+  engineeringTimeSaved EngineeringTimeSaved?
+  batchOperationTask   BatchOperationTask?
+  chatArtifacts        ChatArtifact[] // Artifacts attached from AI Assistant
+  proactiveSuggestions ProactiveSuggestion[] // Suggestions related to this task
+
+  @@index([parentTaskId])
 }
 
 model TaskLog {
   id        String   @id @default(cuid())
   taskId    String
   phase     String   @default("execute") // "plan" | "execute"
-  level     String   @default("info")    // "step" | "info" | "tool" | "error" | "success"
+  level     String   @default("info") // "step" | "info" | "tool" | "error" | "success"
   message   String
   metadata  Json     @default("{}")
   createdAt DateTime @default(now())
@@ -222,7 +319,7 @@ model PlanningQuestion {
   round       Int      @default(1)
   questionKey String
   label       String
-  type        String   // "select" | "multi_select" | "confirm"
+  type        String // "select" | "multi_select" | "confirm"
   options     Json     @default("[]")
   answer      Json?
   required    Boolean  @default(true)
@@ -237,10 +334,10 @@ model PlanningQuestion {
 model ScanResult {
   id           String     @id @default(cuid())
   repositoryId String
-  branch       String?                     // Which branch is being scanned (null = repo default)
-  scannedAt    DateTime   @default(now())  // When scan was queued/created
-  startedAt    DateTime?                   // When worker started processing
-  completedAt  DateTime?                   // When scan finished (success/fail/cancel)
+  branch       String? // Which branch is being scanned (null = repo default)
+  scannedAt    DateTime   @default(now()) // When scan was queued/created
+  startedAt    DateTime? // When worker started processing
+  completedAt  DateTime? // When scan finished (success/fail/cancel)
   status       ScanStatus @default(queued)
   source       ScanSource @default(manual)
   summary      String?
@@ -248,15 +345,20 @@ model ScanResult {
   analysisData Json       @default("{}")
 
   // Usage tracking (denormalized for quick display)
-  inputTokens      Int      @default(0)
-  outputTokens     Int      @default(0)
-  estimatedCostUsd Float    @default(0)
+  inputTokens      Int   @default(0)
+  outputTokens     Int   @default(0)
+  estimatedCostUsd Float @default(0)
 
-  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
-  tasks      Task[]
-  logs       ScanLog[]
+  // Language detection (Phase 1 AI: Accuracy)
+  primaryLanguage String? // Primary programming language detected
+  languageProfile Json    @default("{}") // Full language profile with percentages
 
-  @@index([repositoryId, status])  // For checking active scans per repo
+  repository   Repository          @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  tasks        Task[]
+  logs         ScanLog[]
+  codeAnalysis CodeAnalysisResult?
+
+  @@index([repositoryId, status]) // For checking active scans per repo
 }
 
 model ScanLog {
@@ -275,7 +377,7 @@ model ScanLog {
 model AiInsight {
   id          String    @id @default(cuid())
   userId      String
-  type        String    // "suggestion" | "trend" | "alert"
+  type        String // "suggestion" | "trend" | "alert"
   title       String
   description String
   metadata    Json      @default("{}")
@@ -288,9 +390,9 @@ model AiInsight {
 model ActivityEvent {
   id         String   @id @default(cuid())
   userId     String
-  type       String   // "scan_started" | "scan_completed" | "task_created" | "task_completed" | "pr_opened"
+  type       String // "scan_started" | "scan_completed" | "task_created" | "task_completed" | "pr_opened"
   entityId   String?
-  entityType String?  // "repository" | "task" | "scan"
+  entityType String? // "repository" | "task" | "scan"
   title      String
   metadata   Json     @default("{}")
   createdAt  DateTime @default(now())
@@ -298,21 +400,22 @@ model ActivityEvent {
 }
 
 model ApiKey {
-  id           String       @id @default(cuid())
+  id           String        @id @default(cuid())
   userId       String
   label        String
   encryptedKey String
   keyPrefix    String
   keyType      ClaudeKeyType @default(api_key)
-  priority     Int          @default(0)
-  isActive     Boolean      @default(true)
+  priority     Int           @default(0)
+  isActive     Boolean       @default(true)
   lastUsedAt   DateTime?
   lastError    String?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   usageRecords ApiKeyUsage[]
+
   @@index([userId, isActive, priority])
 }
 
@@ -323,33 +426,34 @@ model ApiKeyUsage {
   inputTokens      Int
   outputTokens     Int
   estimatedCostUsd Float
-  source           String   // "scan" | "task" | "chat" | "command"
+  source           String // "scan" | "task" | "chat" | "command"
   sourceId         String?
   createdAt        DateTime @default(now())
 
   apiKey ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
   @@index([apiKeyId, createdAt])
 }
 
 // Independent usage tracking - persists even if related entities are deleted
 model UsageRecord {
-  id               String   @id @default(cuid())
-  userId           String
-  repositoryId     String?
-  projectId        String?
-  apiKeyId         String?  // Which API key was used (null for OAuth)
+  id           String  @id @default(cuid())
+  userId       String
+  repositoryId String?
+  projectId    String?
+  apiKeyId     String? // Which API key was used (null for OAuth)
 
-  source           String   // "scan" | "task_plan" | "task_execute" | "chat"
-  sourceId         String?  // Reference to scan/task id (may become orphaned)
+  source   String // "scan" | "task_plan" | "task_execute" | "chat"
+  sourceId String? // Reference to scan/task id (may become orphaned)
 
-  model            String   // Claude model used
+  model            String // Claude model used
   inputTokens      Int
   outputTokens     Int
   estimatedCostUsd Float
 
-  authType         String   @default("api_key") // "api_key" | "oauth"
-  metadata         Json     @default("{}")      // Additional context
-  createdAt        DateTime @default(now())
+  authType  String   @default("api_key") // "api_key" | "oauth"
+  metadata  Json     @default("{}") // Additional context
+  createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
   @@index([repositoryId, createdAt])
@@ -362,7 +466,7 @@ model Project {
   userId        String
   name          String
   description   String   @default("")
-  defaultBranch String?  // Project-wide default branch for all tasks (overrides repo.defaultBranch)
+  defaultBranch String? // Project-wide default branch for all tasks (overrides repo.defaultBranch)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -374,6 +478,8 @@ model Project {
   embedConfig      EmbedConfig?
   embedSubmissions EmbedSubmission[]
   installedPlugins InstalledPlugin[]
+  webhookConfigs   WebhookConfig[]
+  projectMemories  ProjectMemory[]
 
   @@index([userId])
 }
@@ -382,7 +488,7 @@ model ProjectRepository {
   id             String   @id @default(cuid())
   projectId      String
   repositoryId   String
-  branchOverride String?  // Per-repo branch override within project (overrides project.defaultBranch)
+  branchOverride String? // Per-repo branch override within project (overrides project.defaultBranch)
   addedAt        DateTime @default(now())
 
   project    Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -432,20 +538,20 @@ model Integration {
 }
 
 model IntegrationLink {
-  id                  String   @id @default(cuid())
+  id                  String    @id @default(cuid())
   integrationId       String
   projectId           String
   externalProjectId   String
   externalProjectName String
-  externalProjectKey  String   @default("")
+  externalProjectKey  String    @default("")
   externalProjectUrl  String?
   lastSyncedAt        DateTime?
   lastError           String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  integration Integration      @relation(fields: [integrationId], references: [id], onDelete: Cascade)
-  project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  integration Integration        @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  project     Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   imports     TaskExternalLink[]
 
   @@unique([integrationId, externalProjectId, projectId])
@@ -470,19 +576,19 @@ model TaskExternalLink {
 }
 
 model EmbedConfig {
-  id               String   @id @default(cuid())
-  projectId        String   @unique
-  enabled          Boolean  @default(true)
+  id        String  @id @default(cuid())
+  projectId String  @unique
+  enabled   Boolean @default(true)
 
   // Appearance
-  title            String   @default("Submit a Requirement")
-  welcomeMessage   String?
-  logoUrl          String?
-  primaryColor     String   @default("#6366f1")
-  backgroundColor  String   @default("#ffffff")
-  textColor        String   @default("#1f2937")
-  borderRadius     Int      @default(8)
-  fontFamily       String   @default("Inter")
+  title           String  @default("Submit a Requirement")
+  welcomeMessage  String?
+  logoUrl         String?
+  primaryColor    String  @default("#6366f1")
+  backgroundColor String  @default("#ffffff")
+  textColor       String  @default("#1f2937")
+  borderRadius    Int     @default(8)
+  fontFamily      String  @default("Inter")
 
   // Behavior
   scoreThreshold   Float    @default(7.0)
@@ -491,51 +597,51 @@ model EmbedConfig {
   allowedFileTypes String[] @default(["pdf", "doc", "docx", "txt", "png", "jpg", "jpeg", "svg", "ts", "js", "py", "zip"])
 
   // i18n
-  language         String   @default("en")
+  language String @default("en")
 
-  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model EmbedSubmission {
-  id                 String                @id @default(cuid())
+  id                 String               @id @default(cuid())
   projectId          String
   sessionToken       String
   title              String
   description        String
-  inputMethod        String                @default("text")
-  screeningStatus    EmbedScreeningStatus  @default(pending)
+  inputMethod        String               @default("text")
+  screeningStatus    EmbedScreeningStatus @default(pending)
   screeningScore     Float?
   screeningReason    String?
-  clarificationRound Int                   @default(0)
-  taskId             String?               @unique
-  attachments        Json                  @default("[]")
-  metadata           Json                  @default("{}")
+  clarificationRound Int                  @default(0)
+  taskId             String?              @unique
+  attachments        Json                 @default("[]")
+  metadata           Json                 @default("{}")
 
-  project            Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  task               Task?                 @relation(fields: [taskId], references: [id])
-  questions          EmbedQuestion[]
-  createdAt          DateTime              @default(now())
-  updatedAt          DateTime              @updatedAt
+  project   Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task      Task?           @relation(fields: [taskId], references: [id])
+  questions EmbedQuestion[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
 
   @@index([projectId, sessionToken])
   @@index([projectId, screeningStatus])
 }
 
 model EmbedQuestion {
-  id           String          @id @default(cuid())
+  id           String  @id @default(cuid())
   submissionId String
   round        Int
   questionKey  String
   label        String
   type         String
-  options      Json            @default("[]")
+  options      Json    @default("[]")
   answer       Json?
-  required     Boolean         @default(true)
-  sortOrder    Int             @default(0)
+  required     Boolean @default(true)
+  sortOrder    Int     @default(0)
 
-  submission   EmbedSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  submission EmbedSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
 
   @@index([submissionId, round])
 }
@@ -545,21 +651,21 @@ model EmbedQuestion {
 // ============================================================================
 
 enum PluginScope {
-  global       // Available in all projects
-  project      // Scoped to specific project
+  global // Available in all projects
+  project // Scoped to specific project
 }
 
 model PluginMarketplace {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   userId      String
   name        String
-  url         String   // URL to marketplace.json
-  isOfficial  Boolean  @default(false)
-  isEnabled   Boolean  @default(true)
+  url         String // URL to marketplace.json
+  isOfficial  Boolean   @default(false)
+  isEnabled   Boolean   @default(true)
   lastFetched DateTime?
   lastError   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -568,38 +674,38 @@ model PluginMarketplace {
 }
 
 model InstalledPlugin {
-  id            String       @id @default(cuid())
-  userId        String
-  projectId     String?      // null = global installation
-  scope         PluginScope  @default(global)
+  id        String      @id @default(cuid())
+  userId    String
+  projectId String? // null = global installation
+  scope     PluginScope @default(global)
 
   // Plugin identity (from plugin.json)
-  pluginId      String       // e.g., "anthropic/search-plugin"
-  name          String
-  description   String       @default("")
-  version       String
-  author        String?
-  repoUrl       String       // Repository URL for fetching
-  iconUrl       String?
+  pluginId    String // e.g., "anthropic/search-plugin"
+  name        String
+  description String  @default("")
+  version     String
+  author      String?
+  repoUrl     String // Repository URL for fetching
+  iconUrl     String?
 
   // Plugin manifest cache
-  manifest      Json         @default("{}") // Cached plugin.json content
+  manifest Json @default("{}") // Cached plugin.json content
 
   // Components enabled
-  skillsEnabled   Boolean    @default(true)
-  agentsEnabled   Boolean    @default(true)
-  hooksEnabled    Boolean    @default(true)
-  mcpEnabled      Boolean    @default(true)
+  skillsEnabled Boolean @default(true)
+  agentsEnabled Boolean @default(true)
+  hooksEnabled  Boolean @default(true)
+  mcpEnabled    Boolean @default(true)
 
   // Configuration
-  config          Json       @default("{}") // User-provided config values
-  permissions     Json       @default("[]") // Granted permissions
+  config      Json @default("{}") // User-provided config values
+  permissions Json @default("[]") // Granted permissions
 
-  isEnabled     Boolean      @default(true)
-  lastSyncedAt  DateTime?
-  lastError     String?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  isEnabled    Boolean   @default(true)
+  lastSyncedAt DateTime?
+  lastError    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -607,4 +713,1440 @@ model InstalledPlugin {
   @@unique([userId, pluginId, projectId])
   @@index([userId, scope])
   @@index([projectId])
+}
+
+// ============================================================================
+// Metrics and Analytics
+// ============================================================================
+
+model CodeChangeMetrics {
+  id           String  @id @default(cuid())
+  taskId       String  @unique
+  userId       String
+  repositoryId String
+  projectId    String?
+
+  linesAdded    Int  @default(0)
+  linesDeleted  Int  @default(0)
+  filesChanged  Int  @default(0)
+  fileBreakdown Json @default("[]")
+  commitCount   Int  @default(0)
+
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([repositoryId, createdAt])
+  @@index([projectId, createdAt])
+}
+
+model EngineeringTimeSaved {
+  id           String  @id @default(cuid())
+  taskId       String  @unique
+  userId       String
+  repositoryId String
+  projectId    String?
+
+  estimatedMinutesSaved Int   @default(0)
+  locFactor             Float @default(0)
+  complexityFactor      Float @default(1.0)
+  contextFactor         Float @default(1.0)
+  methodologyVersion    Int   @default(1)
+
+  createdAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([repositoryId, createdAt])
+  @@index([projectId, createdAt])
+}
+
+model UserPresence {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  lastSeenAt      DateTime @default(now())
+  lastActivityAt  DateTime @default(now())
+  isOnline        Boolean  @default(true)
+  currentView     String?
+  currentActivity String? // e.g., "viewing_task", "viewing_scan", "editing_plan"
+  activityMeta    Json     @default("{}") // { taskId, repoName, scanId, etc. }
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CodeAnalysisResult {
+  id                  String  @id @default(cuid())
+  scanResultId        String  @unique
+  architecturePattern String?
+  dependencies        Json    @default("[]")
+  deadCodePaths       Json    @default("[]")
+  duplications        Json    @default("[]")
+  performanceIssues   Json    @default("[]")
+
+  // Phase 1 AI: Accuracy - False positive analysis
+  falsePositiveAnalysis Json @default("[]") // Array of { finding, context, falsePositiveRisk, reasoning }
+
+  // Phase 1 AI: Accuracy - Language-specific rules
+  languageRuleViolations Json @default("[]") // Array of { rule, filePath, line, snippet }
+
+  createdAt DateTime @default(now())
+
+  scanResult ScanResult @relation(fields: [scanResultId], references: [id], onDelete: Cascade)
+
+  @@index([scanResultId])
+}
+
+model ProjectConvention {
+  id                String   @id @default(cuid())
+  repositoryId      String
+  indentStyle       String?
+  quoteStyle        String?
+  namingConvention  String?
+  frameworkPatterns Json     @default("[]")
+  detectedAt        DateTime @default(now())
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@index([repositoryId])
+}
+
+// ============================================================================
+// Agent Swarm - Coordination & Messaging
+// ============================================================================
+// Task Execution Steps - Progress Tracking
+// ============================================================================
+
+enum TaskStepStatus {
+  pending
+  in_progress
+  completed
+  skipped
+  failed
+}
+
+model TaskStep {
+  id          String         @id @default(cuid())
+  taskId      String
+  title       String
+  description String?
+  status      TaskStepStatus @default(pending)
+  order       Int
+  startedAt   DateTime?
+  completedAt DateTime?
+  metadata    Json           @default("{}")
+  createdAt   DateTime       @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, order])
+}
+
+// ============================================================================
+// Task Execution Logs - Persisted terminal output and file changes
+// ============================================================================
+
+model TaskExecutionLog {
+  id        String   @id @default(cuid())
+  taskId    String
+  type      String   // "terminal" or "file_change"
+  timestamp DateTime @default(now())
+  sequence  Int      @default(0)
+
+  // For terminal output
+  stream    String?  // "stdout" or "stderr"
+  data      String?  // Terminal line content
+
+  // For file changes
+  operation String?  // "create", "modify", "delete"
+  filePath  String?
+  diff      String?  @db.Text
+  language  String?
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, timestamp])
+  @@index([taskId, type])
+}
+
+// ============================================================================
+// Batch Operations - Multi-repo Task Management
+// ============================================================================
+
+enum BatchOperationStatus {
+  pending
+  in_progress
+  completed
+  failed
+  cancelled
+}
+
+model BatchOperation {
+  id            String               @id @default(cuid())
+  userId        String
+  name          String
+  description   String               @default("")
+  status        BatchOperationStatus @default(pending)
+  totalTasks    Int                  @default(0)
+  executionMode String               @default("parallel") // "parallel" | "sequential"
+  metadata      Json                 @default("{}")
+  createdAt     DateTime             @default(now())
+  startedAt     DateTime?
+  completedAt   DateTime?
+
+  tasks BatchOperationTask[]
+
+  @@index([userId, status])
+  @@index([createdAt])
+}
+
+model BatchOperationTask {
+  id               String   @id @default(cuid())
+  batchOperationId String
+  taskId           String   @unique
+  repositoryId     String
+  order            Int      @default(0)
+  createdAt        DateTime @default(now())
+
+  batchOperation BatchOperation @relation(fields: [batchOperationId], references: [id], onDelete: Cascade)
+  task           Task           @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  repository     Repository     @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@index([batchOperationId, order])
+}
+
+// ============================================================================
+// Cross-Repo Synchronization - Linked PRs
+// ============================================================================
+
+model LinkedPR {
+  id           String   @id @default(cuid())
+  batchId      String // References BatchOperation.id
+  repositoryId String
+  repoFullName String
+  prUrl        String
+  prNumber     Int
+  status       String   @default("open") // "pending" | "open" | "merged" | "closed"
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([batchId])
+  @@index([repositoryId])
+}
+
+// ============================================================================
+// AI Assistant - Conversational Development Interface
+// ============================================================================
+
+enum ConversationContextType {
+  global
+  project
+  repository
+}
+
+enum ChatMessageRole {
+  user
+  assistant
+  system
+}
+
+enum ChatArtifactType {
+  html
+  react
+  svg
+  code
+  markdown
+  mermaid
+  json
+}
+
+// Conversation session - groups related messages
+model Conversation {
+  id          String                  @id @default(cuid())
+  userId      String
+  title       String? // Auto-generated from first message or user-set
+  contextType ConversationContextType @default(global)
+  contextId   String? // projectId or repositoryId when scoped
+
+  // Metadata
+  metadata Json @default("{}")
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  archivedAt DateTime?
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+
+  @@index([userId, updatedAt])
+  @@index([contextType, contextId])
+}
+
+// Individual chat message
+model ChatMessage {
+  id             String          @id @default(cuid())
+  conversationId String
+  role           ChatMessageRole
+  content        String          @db.Text
+
+  // MCP Tool calls made by assistant (for transparency)
+  toolCalls Json? // Array of { id, name, input, output, duration, error? }
+
+  // Thinking steps (intermediate reasoning shown in collapsible)
+  thinking Json? // Array of { text?: string, toolCall?: ToolCall }
+
+  // User attachments (images, files)
+  attachments Json? // Array of { id, type, name, url, size, mimeType }
+
+  // Voice input metadata
+  voiceInput    Boolean @default(false)
+  voiceDuration Float? // Duration in seconds
+
+  // Token usage for this message
+  inputTokens  Int?
+  outputTokens Int?
+  costUsd      Float?
+
+  // User feedback
+  feedback     String? // "positive" | "negative"
+  feedbackNote String?
+
+  createdAt DateTime @default(now())
+
+  conversation Conversation   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  artifacts    ChatArtifact[]
+
+  @@index([conversationId, createdAt])
+}
+
+// Artifact generated by AI assistant
+model ChatArtifact {
+  id        String           @id @default(cuid())
+  messageId String?          // Optional - can be null for task-only artifacts
+  type      ChatArtifactType
+  name      String // e.g., "login-form.html"
+  content   String           @db.Text
+  language  String? // For code artifacts: "typescript", "python", etc.
+
+  // Preview
+  previewUrl String? // Cached preview image URL (for complex artifacts)
+
+  // Task attachment
+  taskId String? // If attached to a task
+
+  // Metadata
+  metadata Json @default("{}")
+
+  createdAt DateTime @default(now())
+
+  message ChatMessage? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  task    Task?        @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([messageId])
+  @@index([taskId])
+}
+
+// Voice settings per user
+model VoiceSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  // Voice input settings
+  voiceEnabled  Boolean @default(true)
+  pushToTalk    Boolean @default(true) // false = continuous listening
+  autoSendDelay Int     @default(2000) // ms of silence before auto-send
+  language      String  @default("en-US")
+
+  // Voice output settings (TTS)
+  ttsEnabled Boolean @default(false)
+  ttsVoice   String  @default("default")
+  ttsSpeed   Float   @default(1.0)
+  ttsVolume  Float   @default(1.0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Custom MCP Server configuration
+enum McpServerStatus {
+  pending // Not yet validated
+  active // Validated and working
+  error // Failed validation or connection
+  disabled // Manually disabled by user
+}
+
+model McpServer {
+  id          String  @id @default(cuid())
+  userId      String
+  name        String // Display name
+  url         String // HTTP URL endpoint
+  description String?
+
+  // Transport validation
+  transportType String          @default("http-stream") // Only http-stream allowed
+  status        McpServerStatus @default(pending)
+  lastError     String?
+  lastTestedAt  DateTime?
+
+  // Server capabilities (discovered during validation)
+  capabilities Json @default("{}") // { tools: [...], resources: [...] }
+  toolCount    Int  @default(0)
+
+  // Authentication (optional)
+  authType       String? // "bearer" | "api_key" | "none"
+  encryptedToken String?
+
+  // Usage tracking
+  isEnabled Boolean @default(true)
+  priority  Int     @default(0) // Order for tool resolution
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, url])
+  @@index([userId, isEnabled])
+}
+
+// ============================================================================
+// Smart Clarification - Contextual Questions for Task Creation
+// ============================================================================
+
+// Stores user preferences learned from clarification answers
+model ClarificationHistory {
+  id              String   @id @default(cuid())
+  userId          String
+  projectId       String // Project or repository ID for context scoping
+  repositoryId    String
+  preferenceKey   String // e.g., "component_style", "test_preference"
+  preferenceValue String // e.g., "functional", "yes"
+  usageCount      Int      @default(1) // How many times this preference was used
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, projectId, preferenceKey])
+  @@index([userId, projectId])
+  @@index([repositoryId])
+}
+
+// Tracks clarification sessions for task creation
+model ClarificationSession {
+  id              String    @id @default(cuid())
+  userId          String
+  projectId       String
+  repositoryId    String
+  taskDescription String    @db.Text
+  questions       Json      @default("[]") // Array of ClarificationQuestion
+  answers         Json      @default("[]") // Array of ClarificationAnswer
+  status          String    @default("pending") // "pending" | "completed" | "skipped"
+  createdAt       DateTime  @default(now())
+  completedAt     DateTime?
+
+  @@index([userId, status])
+  @@index([projectId])
+}
+
+// ============================================================================
+// Collaborative Planning - Real-time team features
+// ============================================================================
+
+enum VoteType {
+  upvote
+  downvote
+}
+
+// Approach comments for collaborative discussion
+model ApproachComment {
+  id          String   @id @default(cuid())
+  taskId      String
+  approachIdx Int // Index of the approach being commented on
+  userId      String
+  content     String   @db.Text
+  mentions    Json     @default("[]") // Array of mentioned user IDs
+  parentId    String? // For threaded replies
+  isResolved  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent  ApproachComment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies ApproachComment[] @relation("CommentReplies")
+
+  @@index([taskId, approachIdx])
+  @@index([userId])
+  @@index([parentId])
+}
+
+// Votes on approaches
+model ApproachVote {
+  id          String   @id @default(cuid())
+  taskId      String
+  approachIdx Int // Index of the approach being voted on
+  userId      String
+  voteType    VoteType
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, approachIdx, userId]) // One vote per user per approach
+  @@index([taskId, approachIdx])
+}
+
+// Cursor positions for real-time collaboration
+model PlanningCursor {
+  id              String   @id @default(cuid())
+  taskId          String
+  userId          String
+  x               Float    @default(0)
+  y               Float    @default(0)
+  viewportSection String? // e.g., "approaches", "details", "comments"
+  lastUpdatedAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId])
+  @@index([taskId])
+}
+
+// Mention notifications
+model MentionNotification {
+  id          String   @id @default(cuid())
+  userId      String // User being mentioned
+  mentionedBy String // User who mentioned
+  taskId      String
+  commentId   String? // Optional - if mention is in a comment
+  message     String
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([taskId])
+}
+
+// ============================================================================
+// Phase 4: Dependency Intelligence
+// ============================================================================
+
+enum DependencyEcosystem {
+  npm
+  pypi
+  maven
+  go
+  cargo
+  nuget
+  gem
+  composer
+}
+
+enum DependencyAlertSeverity {
+  low
+  moderate
+  high
+  critical
+}
+
+enum DependencyAlertType {
+  security // Known vulnerability (CVE)
+  breaking_change // Major version with breaking changes
+  unmaintained // No updates for 2+ years
+  deprecated // Package marked deprecated
+  license_change // License changed in new version
+  upgrade_available // New version available (non-breaking)
+}
+
+enum DependencyAlertStatus {
+  active
+  dismissed
+  resolved
+  auto_resolved // Resolved by upgrading in a task
+}
+
+// Tracks dependencies for a repository
+model DependencySnapshot {
+  id           String              @id @default(cuid())
+  repositoryId String
+  branch       String?
+  ecosystem    DependencyEcosystem
+  manifestPath String // e.g., "package.json", "requirements.txt"
+  dependencies Json // Array of { name, version, isDev, isTransitive }
+  lockfileHash String? // Hash of lock file for change detection
+  analyzedAt   DateTime            @default(now())
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@index([repositoryId, ecosystem])
+  @@index([repositoryId, branch])
+}
+
+// Tracks alerts for dependencies
+model DependencyAlert {
+  id             String                  @id @default(cuid())
+  repositoryId   String
+  userId         String
+  ecosystem      DependencyEcosystem
+  packageName    String
+  currentVersion String
+  alertType      DependencyAlertType
+  severity       DependencyAlertSeverity
+  status         DependencyAlertStatus   @default(active)
+
+  // Alert details
+  title            String
+  description      String  @db.Text
+  affectedVersions String? // Version range affected (e.g., "<1.2.3")
+  patchedVersion   String? // Version that fixes the issue
+  cveId            String? // CVE identifier for security issues
+  cvssScore        Float? // CVSS score (0-10)
+
+  // Upgrade path recommendation
+  recommendedVersion String?
+  upgradePath        Json? // Array of intermediate versions if needed
+  breakingChanges    Json? // Array of breaking changes to be aware of
+  migrationGuide     String? @db.Text
+
+  // Metadata
+  sourceUrl       String? // URL to advisory/changelog
+  publishedAt     DateTime? // When the advisory/version was published
+  lastCheckedAt   DateTime  @default(now())
+  dismissedAt     DateTime?
+  dismissedReason String?
+  resolvedAt      DateTime?
+  resolvedTaskId  String? // Task that resolved this alert
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([repositoryId, ecosystem, packageName, alertType, currentVersion])
+  @@index([repositoryId, status])
+  @@index([userId, status])
+  @@index([severity, status])
+}
+
+// Package metadata cache to avoid repeated API calls
+model PackageMetadataCache {
+  id          String              @id @default(cuid())
+  ecosystem   DependencyEcosystem
+  packageName String
+
+  // Latest version info
+  latestVersion       String?
+  latestStableVersion String?
+
+  // Maintenance status
+  lastPublishDate    DateTime?
+  isDeprecated       Boolean   @default(false)
+  deprecationMessage String?
+
+  // Repository info
+  repositoryUrl String?
+  homepage      String?
+  license       String?
+
+  // Version history
+  versions Json @default("[]") // Array of { version, publishedAt }
+
+  // Security advisories
+  advisories Json @default("[]") // Array of advisory data
+
+  // Cache management
+  cachedAt  DateTime @default(now())
+  expiresAt DateTime
+
+  @@unique([ecosystem, packageName])
+  @@index([ecosystem, packageName])
+  @@index([expiresAt])
+}
+
+// ============================================================================
+// Phase 4: Code Health Monitoring
+// ============================================================================
+
+enum HealthMetricType {
+  complexity // Cyclomatic complexity
+  duplication // Code duplication percentage
+  test_coverage // Test coverage percentage
+  documentation // Documentation coverage
+  maintainability // Maintainability index
+  security // Security score based on patterns
+  dependencies // Dependency health score
+  churn // File change frequency
+}
+
+// Daily/weekly snapshot of code health metrics
+model CodeHealthSnapshot {
+  id           String  @id @default(cuid())
+  repositoryId String
+  branch       String?
+
+  // Overall scores (0-100)
+  overallScore         Float
+  complexityScore      Float
+  duplicationScore     Float
+  coverageScore        Float
+  maintainabilityScore Float
+  securityScore        Float
+  dependencyScore      Float
+
+  // Raw metrics
+  totalFiles      Int    @default(0)
+  totalLines      Int    @default(0)
+  avgComplexity   Float  @default(0)
+  duplicationPct  Float  @default(0)
+  testCoveragePct Float?
+  docCoveragePct  Float?
+
+  // Debt tracking
+  technicalDebtHours Float @default(0)
+  codeSmellCount     Int   @default(0)
+  bugRiskCount       Int   @default(0)
+
+  // Analysis metadata
+  analyzedAt      DateTime @default(now())
+  analysisVersion String   @default("1.0")
+  metadata        Json     @default("{}")
+
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@index([repositoryId, analyzedAt])
+  @@index([repositoryId, branch, analyzedAt])
+}
+
+// Tracks high-churn files (hotspots) - files that change frequently and may need attention
+model CodeHotspot {
+  id           String  @id @default(cuid())
+  repositoryId String
+  branch       String?
+  filePath     String
+
+  // Churn metrics (rolling 30 days)
+  changeCount   Int @default(0) // Number of commits touching this file
+  additionCount Int @default(0) // Total lines added
+  deletionCount Int @default(0) // Total lines deleted
+  authorCount   Int @default(0) // Number of unique authors
+
+  // Risk factors
+  complexity   Float  @default(0) // Current complexity score
+  testCoverage Float? // Test coverage for this file
+  bugFixCount  Int    @default(0) // Bug fixes in this file
+
+  // Calculated risk score (0-100)
+  riskScore Float  @default(0)
+  riskLevel String @default("low") // "low" | "medium" | "high" | "critical"
+
+  // First/last seen
+  firstSeenAt   DateTime @default(now())
+  lastChangedAt DateTime @default(now())
+  analyzedAt    DateTime @default(now())
+
+  metadata   Json       @default("{}")
+  repository Repository @relation(fields: [repositoryId], references: [id])
+
+  @@unique([repositoryId, branch, filePath])
+  @@index([repositoryId, riskLevel])
+  @@index([repositoryId, branch])
+  @@index([riskScore])
+}
+
+// Tracks quality metric changes over time for trend analysis
+model CodeQualityTrend {
+  id           String           @id @default(cuid())
+  repositoryId String
+  branch       String?
+  metricType   HealthMetricType
+
+  // Time series data
+  date          DateTime @default(now()) @db.Date
+  value         Float
+  previousValue Float?
+  changePercent Float?
+
+  // Context
+  commitHash String?
+  taskId     String? // If change was due to a task
+
+  @@unique([repositoryId, branch, metricType, date])
+  @@index([repositoryId, metricType, date])
+  @@index([repositoryId, branch, date])
+}
+
+// Aggregated project-level health metrics
+model ProjectHealthSummary {
+  id        String @id @default(cuid())
+  projectId String
+
+  // Aggregated scores across all repos
+  overallScore       Float
+  avgComplexity      Float
+  avgCoverage        Float
+  avgMaintainability Float
+
+  // Counts
+  totalRepositories Int @default(0)
+  totalHotspots     Int @default(0)
+  criticalHotspots  Int @default(0)
+
+  // Trend indicators
+  scoreTrend   String @default("stable") // "improving" | "stable" | "degrading"
+  trendPercent Float  @default(0)
+
+  // Last calculated
+  calculatedAt DateTime @default(now())
+
+  @@unique([projectId])
+  @@index([projectId])
+}
+
+// ============================================================================
+// Phase 4: GitHub Deep Integration - Webhooks
+// ============================================================================
+
+enum WebhookProvider {
+  github
+  linear
+  jira
+}
+
+// Webhook configuration for receiving external events
+model WebhookConfig {
+  id           String          @id @default(cuid())
+  userId       String
+  provider     WebhookProvider
+  secret       String // HMAC secret for signature verification
+  repositoryId String? // Optional - scope to specific repository
+  projectId    String? // Optional - scope to specific project
+
+  enabled     Boolean   @default(true)
+  eventCount  Int       @default(0)
+  lastEventAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  repository Repository?    @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  project    Project?       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  events     WebhookEvent[]
+
+  @@index([userId])
+  @@index([repositoryId])
+  @@index([projectId])
+}
+
+// Webhook event log for debugging and audit
+model WebhookEvent {
+  id              String   @id @default(cuid())
+  webhookConfigId String
+  eventType       String // e.g., "issues", "pull_request", "pull_request_review"
+  deliveryId      String? // GitHub delivery ID
+  processed       Boolean  @default(false)
+  action          String? // Processing action taken
+  error           String? // Error message if processing failed
+  createdAt       DateTime @default(now())
+
+  webhookConfig WebhookConfig @relation(fields: [webhookConfigId], references: [id], onDelete: Cascade)
+
+  @@index([webhookConfigId, createdAt])
+  @@index([eventType])
+}
+
+// ============================================================================
+// Phase 4: Proactive Suggestions
+// ============================================================================
+
+// Proactive code improvement suggestions
+model ProactiveSuggestion {
+  id           String @id @default(cuid())
+  userId       String
+  repositoryId String
+
+  // Suggestion details (using String for type/priority/status to avoid enum complexity)
+  type        String // refactor_first, optimization, pattern_match, etc.
+  priority    String @default("medium")
+  status      String @default("pending")
+  title       String
+  description String @db.Text
+  rationale   String @default("") @db.Text
+
+  // Affected code
+  affectedFiles Json @default("[]") // Array of file paths
+
+  // Related entities
+  relatedTaskId    String? // Task this suggestion is for
+  relatedPatternId String? // Design pattern reference
+
+  // AI confidence and impact estimates
+  confidence      Float @default(0.5)
+  estimatedImpact Json  @default("{}") // { codeQuality, performance, maintainability, timeToFix, riskLevel }
+
+  // Suggested actions
+  suggestedActions Json @default("[]") // Array of { id, title, description, actionType, payload }
+
+  // Metadata
+  metadata Json @default("{}")
+
+  // Lifecycle timestamps
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime? // When this suggestion expires
+  dismissedAt DateTime? // When user dismissed
+  appliedAt   DateTime? // When user applied
+
+  // Relations
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repository  Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  relatedTask Task?      @relation(fields: [relatedTaskId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([repositoryId, status])
+  @@index([type, priority])
+  @@index([relatedTaskId])
+  @@index([expiresAt])
+}
+
+// ============================================================================
+// Phase 5: Feedback Loops - Learning from Reviews
+// ============================================================================
+
+enum FeedbackRating {
+  positive
+  negative
+  neutral
+}
+
+// Feedback signals from users (thumbs up/down, PR reviews, etc.)
+model FeedbackSignal {
+  id           String  @id @default(cuid())
+  userId       String
+  repositoryId String
+  projectId    String?
+
+  // Feedback type and value
+  type   String // thumbs_up, thumbs_down, pr_approved, pr_rejected, etc.
+  rating FeedbackRating
+
+  // Context
+  taskId         String?
+  messageId      String?
+  pullRequestUrl String?
+  approachIndex  Int?
+  suggestionType String  @default("")
+  context        String  @default("") @db.Text
+  note           String? @db.Text
+
+  // Metadata
+  metadata Json @default("{}")
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, repositoryId])
+  @@index([userId, createdAt])
+  @@index([repositoryId, type])
+  @@index([taskId])
+}
+
+// Learned patterns from feedback
+model LearnedPattern {
+  id           String  @id @default(cuid())
+  userId       String
+  repositoryId String
+  projectId    String?
+
+  // Pattern details
+  pattern     String  @db.Text
+  patternHash String // Hash for deduplication
+  category    String // coding_style, architecture, naming_convention, etc.
+  confidence  Float   @default(0.5)
+  actionable  String? @db.Text // What to do differently
+
+  // Usage tracking
+  usageCount Int      @default(1)
+  lastUsed   DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, repositoryId, patternHash])
+  @@index([userId, repositoryId])
+  @@index([userId, category])
+  @@index([confidence])
+}
+
+// "This fix was rejected because..." memory
+model RejectionMemory {
+  id           String  @id @default(cuid())
+  userId       String
+  repositoryId String
+  projectId    String?
+
+  // Rejection details
+  rejectionReason String @db.Text
+  rejectionHash   String // Hash for deduplication
+  context         String @db.Text // Task/code context
+  fixAttempted    String @db.Text // What fix was attempted
+  learnedAction   String @db.Text // What should be done instead
+
+  // Tracking
+  confidence   Float    @default(0.5)
+  occurrences  Int      @default(1)
+  lastOccurred DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, repositoryId, rejectionHash])
+  @@index([userId, repositoryId])
+  @@index([occurrences])
+}
+
+// A/B Experiment tracking
+model ABExperiment {
+  id           String  @id @default(cuid())
+  userId       String
+  repositoryId String?
+  projectId    String?
+
+  // Experiment details
+  name        String
+  description String @default("") @db.Text
+  status      String @default("active") // active, completed, cancelled
+
+  // Variant definitions
+  variantA Json // { name, description, configuration }
+  variantB Json // { name, description, configuration }
+
+  // Sample tracking
+  sampleSize     Int @default(20)
+  currentSampleA Int @default(0)
+  currentSampleB Int @default(0)
+
+  // Aggregated results
+  resultsA Json    @default("{}") // ABTestMetrics
+  resultsB Json    @default("{}") // ABTestMetrics
+  winner   String? // "A" | "B" | "tie"
+
+  // Timestamps
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  results ABTestResult[]
+
+  @@index([userId, status])
+  @@index([repositoryId])
+  @@index([projectId])
+}
+
+// Individual A/B test results
+model ABTestResult {
+  id           String @id @default(cuid())
+  experimentId String
+  userId       String
+  taskId       String
+
+  // Result details
+  variant         String // "A" | "B"
+  success         Boolean
+  executionTimeMs Int
+
+  // Optional metrics
+  prApproved       Boolean?
+  userSatisfaction Float? // 1-5 scale
+  codeQualityScore Float? // 0-100
+  revisions        Int      @default(0)
+
+  createdAt DateTime @default(now())
+
+  experiment ABExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+
+  @@index([experimentId])
+  @@index([variant])
+  @@index([taskId])
+}
+
+// ============================================================================
+// Phase 5: Project Memory - Remember Past Decisions and Context
+// ============================================================================
+
+enum MemoryCategory {
+  architecture // Architectural decisions
+  convention // Coding conventions and style
+  decision // Project decisions
+  learning // Learnings from past work
+  context // General project context
+}
+
+// Project memory - stores decisions, context, and learnings
+model ProjectMemory {
+  id           String  @id @default(cuid())
+  projectId    String?
+  repositoryId String?
+  userId       String
+
+  // Memory content
+  category   MemoryCategory
+  title      String
+  content    String         @db.Text
+  importance Int            @default(5) // 1-10 scale
+
+  // Organization
+  tags           String[] @default([])
+  relatedTaskIds String[] @default([])
+
+  // Embedding for semantic search (optional)
+  embedding      Float[] // Vector embedding for semantic search
+  embeddingModel String? // Model used for embedding (e.g., "text-embedding-3-small")
+
+  // Consolidation tracking
+  isConsolidated  Boolean   @default(false) // Whether this is a consolidated memory
+  consolidatedAt  DateTime? // When this was consolidated
+  sourceMemoryIds String[]  @default([]) // IDs of memories that were consolidated into this
+
+  // Metadata
+  metadata Json @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project    Project?    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  repository Repository? @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([repositoryId])
+  @@index([userId])
+  @@index([category])
+  @@index([importance])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// Phase 4: Zone Triggers - Workflow Automation
+// ============================================================================
+
+// Workflow automation triggers
+model Trigger {
+  id          String  @id @default(cuid())
+  userId      String
+  name        String
+  description String? @db.Text
+  enabled     Boolean @default(true)
+  triggerType String // task_status_change, scan_complete, time_based, file_change
+
+  // Condition tree (JSON structure for complex AND/OR conditions)
+  // Structure: { type: "group", operator: "AND"|"OR", conditions: [...] }
+  // or { type: "condition", field: "status", operator: "equals", value: "completed" }
+  conditions Json
+
+  // Action list
+  // Structure: [{ type: "notify", config: { channel: "email", ... } }, ...]
+  actions Json
+
+  // Execution metadata
+  lastTriggeredAt DateTime?
+  triggerCount    Int       @default(0)
+
+  // Optional scoping
+  repositoryId String?
+  projectId    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  executions TriggerExecution[]
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, enabled])
+  @@index([triggerType])
+  @@index([repositoryId])
+  @@index([projectId])
+}
+
+// Trigger execution history
+model TriggerExecution {
+  id         String   @id @default(cuid())
+  triggerId  String
+  status     String // success, failed, skipped
+  inputData  Json // The event data that triggered execution
+  outputData Json? // Results from action execution
+  error      String?  @db.Text
+  executedAt DateTime @default(now())
+  durationMs Int? // Execution time in milliseconds
+
+  trigger Trigger @relation(fields: [triggerId], references: [id], onDelete: Cascade)
+
+  @@index([triggerId, executedAt])
+  @@index([status])
+}
+
+// ============================================================================
+// Phase 5: Team Coordination - RTS-style Team Activity View
+// ============================================================================
+
+// Team activity tracking - logs all team member activities
+model TeamActivity {
+  id         String   @id @default(cuid())
+  userId     String
+  type       String // task_start, task_complete, comment, review, scan, coding, idle
+  entityId   String? // taskId or scanId
+  entityType String? // task, scan, pr, file
+  metadata   Json? // Additional context (fileName, branch, etc.)
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@index([type])
+}
+
+// Team ping - direct notifications between team members
+model TeamPing {
+  id         String   @id @default(cuid())
+  fromUserId String
+  toUserId   String
+  message    String?
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  fromUser User @relation("PingSender", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User @relation("PingReceiver", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([toUserId, read])
+  @@index([fromUserId])
+  @@index([createdAt])
+}
+
+// =============================================================================
+// Phase 5: Personalization - User Preferences
+// =============================================================================
+
+model UserPreferences {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  // AI Interaction Preferences
+  aiVerbosity        String   @default("medium") // minimal, medium, detailed
+  preferredLanguages String[] @default([]) // Programming languages user prefers
+  preferredTools     String[] @default([]) // MCP tools user prefers
+
+  // Code Style Preferences
+  codeStyle Json @default("{}") // { indentation, quotes, semicolons, lineWidth, etc. }
+
+  // Notification Preferences
+  notificationPrefs Json @default("{}") // { email, push, desktop, etc. }
+
+  // Quiet Hours (when to reduce interruptions)
+  quietHoursStart String? // "22:00" format
+  quietHoursEnd   String? // "08:00" format
+  timezone        String  @default("UTC")
+
+  // UI Preferences
+  uiDensity String @default("comfortable") // compact, comfortable, spacious
+  aiTone    String @default("professional") // casual, professional, technical
+
+  // Learned Patterns (auto-detected preferences)
+  learnedPatterns Json @default("{}") // { peakHours, avgSessionLength, preferredTaskTypes, etc. }
+
+  // Feature toggles
+  enableAutoDetection Boolean @default(true) // Allow system to learn patterns
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Track user behavior signals for personalization
+model UserBehaviorSignal {
+  id     String @id @default(cuid())
+  userId String
+
+  // Signal categorization
+  signalType String // preference_click, task_style, time_active, tool_usage, code_style, etc.
+  category   String // ui, ai, code, workflow
+
+  // Signal data
+  data Json // Flexible data storage for different signal types
+
+  // Context
+  context   String? // Where the signal was captured (page, feature)
+  sessionId String? // Track signals within a session
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, signalType])
+  @@index([userId, category])
+}
+
+// ============================================================================
+// Phase 5: Push Notifications - Alerts System
+// ============================================================================
+
+// Notification types
+enum NotificationType {
+  task_complete
+  task_failed
+  scan_done
+  scan_failed
+  mention
+  alert
+  system
+  dependency_alert
+  pr_status
+}
+
+// In-app notifications for users
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  data      Json? // Additional context like taskId, scanId, etc.
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
+}
+
+// Push notification subscriptions (Web Push API)
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String
+  keys      Json // { p256dh: string, auth: string }
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, endpoint])
+  @@index([userId])
+}
+
+// User notification preferences
+model NotificationPreference {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  // Channel preferences
+  inAppEnabled Boolean @default(true)
+  pushEnabled  Boolean @default(true)
+  emailEnabled Boolean @default(false)
+
+  // Type preferences
+  taskComplete        Boolean @default(true)
+  taskFailed          Boolean @default(true)
+  scanDone            Boolean @default(true)
+  scanFailed          Boolean @default(true)
+  mentions            Boolean @default(true)
+  alerts              Boolean @default(true)
+  systemNotifications Boolean @default(true)
+  dependencyAlerts    Boolean @default(true)
+  prStatus            Boolean @default(true)
+
+  // Quiet hours
+  quietHoursEnabled Boolean @default(false)
+  quietHoursStart   String? // HH:mm format
+  quietHoursEnd     String? // HH:mm format
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Spatial Canvas - Figma-style board for organizing tasks visually
+model CanvasState {
+  id        String  @id @default(cuid())
+  projectId String? // null for global canvas (all tasks)
+  userId    String
+
+  // Task positions: { taskId: { x, y, width, height } }
+  taskPositions Json @default("{}")
+
+  // Connections between tasks: [{ id, sourceId, targetId, label? }]
+  connections Json @default("[]")
+
+  // Task groups: [{ id, name, taskIds[], color, bounds }]
+  groups Json @default("[]")
+
+  // Viewport state
+  zoom      Float @default(1.0)
+  viewportX Float @default(0)
+  viewportY Float @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+// ============================================================================
+// Phase 5: AI Self-Improvement - Accuracy Metrics & Prompt Refinement
+// ============================================================================
+
+// AI Metric - Track AI accuracy, false positives, execution success, etc.
+model AIMetric {
+  id         String   @id @default(cuid())
+  userId     String
+  metricType String // accuracy, false_positive, false_negative, execution_success, precision, recall
+  entityType String // task, scan, finding, suggestion, plan
+  entityId   String?
+  value      Float
+  metadata   Json? // Additional context (taskType, repositoryId, findingType, etc.)
+  createdAt  DateTime @default(now())
+
+  @@index([userId, metricType, createdAt])
+  @@index([entityType, entityId])
+  @@index([metricType, createdAt])
+}
+
+// AI Feedback - User feedback on AI outputs
+model AIFeedback {
+  id           String   @id @default(cuid())
+  userId       String
+  entityType   String // task, scan_finding, suggestion, plan
+  entityId     String
+  feedbackType String // thumbs_up, thumbs_down, false_positive, helpful, not_helpful, incorrect
+  comment      String?  @db.Text
+  createdAt    DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId, createdAt])
+  @@index([feedbackType, createdAt])
+}
+
+// Prompt Refinement - Track suggested and applied prompt improvements
+model PromptRefinement {
+  id              String    @id @default(cuid())
+  category        String // scan, plan, execute, analyze, review
+  originalPattern String    @db.Text // Description of the problematic pattern
+  suggestedChange String    @db.Text // Suggested prompt modification
+  reason          String    @db.Text // Why this fix should help
+  failureCount    Int       @default(0) // Number of failures triggering this suggestion
+  appliedAt       DateTime? // When the refinement was applied (null = not yet applied)
+  createdAt       DateTime  @default(now())
+
+  @@index([category, appliedAt])
+  @@index([failureCount])
 }
