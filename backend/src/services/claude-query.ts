@@ -58,11 +58,21 @@ export function setupAgentSdkAuth(auth: ResolvedAuth): void {
 }
 
 /**
- * Check if valid authentication is configured.
+ * Check if the key is an OAuth token (not valid for direct API calls).
+ */
+export function isOAuthToken(key: string): boolean {
+  return key.startsWith("sk-ant-oat");
+}
+
+/**
+ * Check if valid authentication is configured for direct API calls.
+ * OAuth tokens (from Claude Code) don't work with the Anthropic SDK directly.
  */
 export function isValidAuth(auth: ResolvedAuth): boolean {
   if (!auth.key) return false;
   if (auth.authType === "api_key" && auth.key === "sk-ant-xxx") return false;
+  // OAuth tokens from Claude Code don't work with the Anthropic SDK
+  if (isOAuthToken(auth.key)) return false;
   return true;
 }
 
@@ -132,36 +142,79 @@ export async function simpleQuery(
 }
 
 /**
- * Record usage to the database for a specific API key.
+ * Record usage to the database.
+ * Creates both:
+ * - UsageRecord: Always created for analytics (works with OAuth too)
+ * - ApiKeyUsage: Created when apiKeyId is present
  */
 export async function recordUsage(
-  apiKeyId: string | null,
-  model: string,
-  inputTokens: number,
-  outputTokens: number,
-  source: string,
-  sourceId?: string
+  params: {
+    userId: string;
+    apiKeyId: string | null;
+    authType: AuthType;
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+    source: string;
+    sourceId?: string;
+    repositoryId?: string;
+    projectId?: string;
+    metadata?: Record<string, unknown>;
+  }
 ): Promise<void> {
-  if (!apiKeyId) return;
+  const {
+    userId,
+    apiKeyId,
+    authType,
+    model,
+    inputTokens,
+    outputTokens,
+    costUsd,
+    source,
+    sourceId,
+    repositoryId,
+    projectId,
+    metadata = {},
+  } = params;
 
-  const cost = estimateCost(model, inputTokens, outputTokens);
-
-  await prisma.apiKeyUsage.create({
+  // Always create UsageRecord for analytics (works with OAuth too)
+  await prisma.usageRecord.create({
     data: {
+      userId,
+      repositoryId,
+      projectId,
       apiKeyId,
+      source,
+      sourceId,
       model,
       inputTokens,
       outputTokens,
-      estimatedCostUsd: cost,
-      source,
-      sourceId,
+      estimatedCostUsd: costUsd,
+      authType,
+      metadata: metadata as any,
     },
   });
 
-  await prisma.apiKey.update({
-    where: { id: apiKeyId },
-    data: { lastUsedAt: new Date(), lastError: null },
-  });
+  // Additionally create ApiKeyUsage when using a stored API key
+  if (apiKeyId) {
+    await prisma.apiKeyUsage.create({
+      data: {
+        apiKeyId,
+        model,
+        inputTokens,
+        outputTokens,
+        estimatedCostUsd: costUsd,
+        source,
+        sourceId,
+      },
+    });
+
+    await prisma.apiKey.update({
+      where: { id: apiKeyId },
+      data: { lastUsedAt: new Date(), lastError: null },
+    });
+  }
 }
 
 /**

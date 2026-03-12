@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { ThemeProvider, useTheme } from "./lib/theme";
 import { AuthProvider, useAuth } from "./lib/auth";
+import { WebSocketProvider } from "./lib/websocket";
 import { Layout } from "./components/Layout";
 import { Login } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
@@ -18,6 +19,11 @@ import { RepoDetail } from "./pages/RepoDetail";
 import { Projects } from "./pages/Projects";
 import { ProjectDetail } from "./pages/ProjectDetail";
 import { Plugins } from "./pages/Plugins";
+import Analytics from "./pages/Analytics";
+import Canvas from "./pages/Canvas";
+import Notifications from "./pages/Notifications";
+import { Team } from "./pages/Team";
+import { Triggers } from "./pages/Triggers";
 import { CommandPalette } from "./components/CommandPalette";
 import { Toaster } from "./components/ui/sonner";
 
@@ -56,6 +62,11 @@ function AppRoutes() {
           <Route path="/activity" element={<Activity />} />
           <Route path="/queues" element={<Queues />} />
           <Route path="/plugins" element={<Plugins />} />
+          <Route path="/analytics" element={<Analytics />} />
+          <Route path="/canvas" element={<Canvas />} />
+          <Route path="/notifications" element={<Notifications />} />
+          <Route path="/team" element={<Team />} />
+          <Route path="/triggers" element={<Triggers />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" />} />
@@ -73,12 +84,14 @@ export default function App() {
   return (
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <BrowserRouter>
-            <AppRoutes />
-          </BrowserRouter>
-          <ThemedToaster />
-        </AuthProvider>
+        <WebSocketProvider>
+          <AuthProvider>
+            <BrowserRouter>
+              <AppRoutes />
+            </BrowserRouter>
+            <ThemedToaster />
+          </AuthProvider>
+        </WebSocketProvider>
       </QueryClientProvider>
     </ThemeProvider>
   );

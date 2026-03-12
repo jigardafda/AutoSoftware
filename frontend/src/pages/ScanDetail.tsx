@@ -21,6 +21,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RefreshButton } from "@/components/RefreshButton";
+import { ViewerBadges } from "@/components/ViewerBadges";
+import { useScanSubscription } from "@/lib/websocket";
+import { useAuth } from "@/lib/auth";
 import {
   Card,
   CardContent,
@@ -37,6 +40,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ScanAnalysisDashboard } from "@/components/scan-analysis";
 
 // --- Helpers ---
 
@@ -208,12 +212,17 @@ export function ScanDetail() {
   const [lastLogId, setLastLogId] = useState<string | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
 
+  // Get current user for viewer badges
+  const { user } = useAuth();
+
+  // Subscribe to real-time scan updates via WebSocket
+  useScanSubscription(id!);
+
   const { data: scan, isLoading } = useQuery({
     queryKey: ["scan", id],
     queryFn: () => api.scans.get(id!),
     enabled: !!id,
-    refetchInterval: (query) =>
-      query.state.data?.status === "in_progress" || query.state.data?.status === "queued" ? 3000 : false,
+    // WebSocket subscription handles real-time updates, no polling needed
   });
 
   const cancelMutation = useMutation({
@@ -316,6 +325,7 @@ export function ScanDetail() {
             Back to Scans
           </Button>
           <RefreshButton queryKeys={[["scan", id]]} />
+          <ViewerBadges resource={`scan:${id}`} currentUserId={user?.id} />
         </div>
         {(scan.status === "in_progress" || scan.status === "queued") && (
           <Button
@@ -468,9 +478,17 @@ export function ScanDetail() {
       )}
 
       {/* Tabs */}
-      <Tabs defaultValue="logs" className="space-y-4">
+      <Tabs defaultValue="analysis" className="space-y-4">
         <div className="overflow-x-auto">
           <TabsList>
+            <TabsTrigger value="analysis" className="gap-1.5">
+              Analysis
+              {scan.codeAnalysis && (
+                <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5 py-0 bg-blue-500/15 text-blue-500">
+                  New
+                </Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="logs" className="gap-1.5">
               Logs
               {isWaiting ? (
@@ -495,6 +513,26 @@ export function ScanDetail() {
             <TabsTrigger value="raw-analysis">Raw Analysis</TabsTrigger>
           </TabsList>
         </div>
+
+        {/* Analysis Tab */}
+        <TabsContent value="analysis">
+          {scan.status === "in_progress" ? (
+            <Card>
+              <CardContent className="py-8">
+                <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Analysis will be available when the scan completes.
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <ScanAnalysisDashboard
+              codeAnalysis={scan.codeAnalysis}
+              languageProfile={scan.languageProfile as any}
+              primaryLanguage={scan.primaryLanguage}
+            />
+          )}
+        </TabsContent>
 
         {/* Logs Tab */}
         <TabsContent value="logs">

@@ -13,6 +13,7 @@ import {
   Loader2,
   GitCommit,
   GitBranch,
+  GitFork,
   Trash2,
   MessageSquare,
   ClipboardList,
@@ -33,9 +34,19 @@ import {
   Activity,
   Ban,
   Play,
+  ThumbsUp,
+  ThumbsDown,
+  FileText,
+  Download,
+  Copy,
+  Eye,
 } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 import { PlanningQuestionsCard } from "@/components/tasks/PlanningQuestionsCard";
+import { ApproachSelector } from "@/components/tasks/ApproachSelector";
+import { TaskSteps } from "@/components/tasks/TaskSteps";
+import { SessionTree } from "@/components/tasks/SessionTree";
+import { PlanComparison } from "@/components/tasks/PlanComparison";
 import { LinkedText } from "@/components/LinkedText";
 import { ExternalSourceBadge } from "@/components/integrations/ExternalSourceBadge";
 import { Button } from "@/components/ui/button";
@@ -60,7 +71,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Markdown } from "@/components/ui/markdown";
 import { BranchSelect } from "@/components/BranchSelect";
 import { RefreshButton } from "@/components/RefreshButton";
+import { ViewerBadges } from "@/components/ViewerBadges";
+import { useTaskSubscription } from "@/lib/websocket";
+import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
+import { LiveExecutionView } from "@/components/LiveExecutionView";
+import { MemorySuggestions } from "@/components/memory";
 
 // --- Helpers ---
 
@@ -514,13 +530,160 @@ function TaskDetailSkeleton() {
   );
 }
 
+// --- Artifact Card Component ---
+
+function ArtifactCard({ artifact }: {
+  artifact: {
+    id: string;
+    type: string;
+    name: string;
+    content: string;
+    language?: string;
+    createdAt: string;
+  }
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const typeIcons: Record<string, React.ReactNode> = {
+    markdown: <FileText className="h-4 w-4 text-blue-500" />,
+    code: <FileCode2 className="h-4 w-4 text-green-500" />,
+    html: <Globe className="h-4 w-4 text-orange-500" />,
+    react: <Sparkles className="h-4 w-4 text-cyan-500" />,
+    json: <FileCode2 className="h-4 w-4 text-yellow-500" />,
+    mermaid: <Activity className="h-4 w-4 text-purple-500" />,
+    svg: <FileCode2 className="h-4 w-4 text-pink-500" />,
+  };
+
+  const typeBadgeColors: Record<string, string> = {
+    markdown: "bg-blue-500/10 text-blue-500",
+    code: "bg-green-500/10 text-green-500",
+    html: "bg-orange-500/10 text-orange-500",
+    react: "bg-cyan-500/10 text-cyan-500",
+    json: "bg-yellow-500/10 text-yellow-500",
+    mermaid: "bg-purple-500/10 text-purple-500",
+    svg: "bg-pink-500/10 text-pink-500",
+  };
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(artifact.content);
+    setCopied(true);
+    toast.success("Copied to clipboard");
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDownload = () => {
+    const blob = new Blob([artifact.content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = artifact.name;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Downloaded ${artifact.name}`);
+  };
+
+  const previewContent = artifact.content.length > 500
+    ? artifact.content.slice(0, 500) + "..."
+    : artifact.content;
+
+  return (
+    <div className="border rounded-lg overflow-hidden">
+      {/* Header */}
+      <div
+        className="flex items-center justify-between p-3 bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex items-center gap-3">
+          {typeIcons[artifact.type] || <FileText className="h-4 w-4" />}
+          <div>
+            <p className="font-medium text-sm">{artifact.name}</p>
+            <p className="text-xs text-muted-foreground">
+              {relativeTime(artifact.createdAt)}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge
+            variant="secondary"
+            className={cn("text-xs", typeBadgeColors[artifact.type] || "")}
+          >
+            {artifact.type}
+            {artifact.language && ` · ${artifact.language}`}
+          </Badge>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCopy();
+            }}
+          >
+            {copied ? (
+              <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+            ) : (
+              <Copy className="h-3.5 w-3.5" />
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDownload();
+            }}
+          >
+            <Download className="h-3.5 w-3.5" />
+          </Button>
+          {isExpanded ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          )}
+        </div>
+      </div>
+
+      {/* Content */}
+      {isExpanded && (
+        <div className="p-4 border-t bg-background">
+          {artifact.type === "markdown" ? (
+            <div className="prose prose-sm dark:prose-invert max-w-none">
+              <Markdown>{artifact.content}</Markdown>
+            </div>
+          ) : (
+            <pre className="text-xs bg-muted/50 p-4 rounded-lg overflow-x-auto max-h-[500px]">
+              <code className={artifact.language ? `language-${artifact.language}` : ""}>
+                {artifact.content}
+              </code>
+            </pre>
+          )}
+        </div>
+      )}
+
+      {/* Preview when collapsed */}
+      {!isExpanded && artifact.content && (
+        <div className="p-3 border-t text-xs text-muted-foreground">
+          <pre className="truncate">{previewContent}</pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- Main Component ---
 
 export function TaskDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-
   const queryClient = useQueryClient();
+
+  // Get current user for viewer badges
+  const { user } = useAuth();
+
+  // Subscribe to real-time task updates via WebSocket
+  useTaskSubscription(id!);
 
   const deleteMutation = useMutation({
     mutationFn: () => api.tasks.delete(id!),
@@ -580,14 +743,27 @@ export function TaskDetail() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  // AI feedback state and mutation
+  const [taskFeedback, setTaskFeedback] = useState<"positive" | "negative" | null>(null);
+  const feedbackMutation = useMutation({
+    mutationFn: (feedbackType: "thumbs_up" | "thumbs_down") =>
+      api.aiMetrics.recordFeedback({
+        entityType: "task",
+        entityId: id!,
+        feedbackType,
+      }),
+    onSuccess: (_, feedbackType) => {
+      setTaskFeedback(feedbackType === "thumbs_up" ? "positive" : "negative");
+      toast.success("Thanks for your feedback!");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const { data: task, isLoading } = useQuery({
     queryKey: ["task", id],
     queryFn: () => api.tasks.get(id!),
     enabled: !!id,
-    refetchInterval: (query) => {
-      const s = query.state.data?.status;
-      return (s === "in_progress" || s === "planning") ? 3000 : false;
-    },
+    // WebSocket subscription handles real-time updates, no polling needed
   });
 
   // Fetch branches for branch selector
@@ -704,6 +880,7 @@ export function TaskDetail() {
             Back to Tasks
           </Button>
           <RefreshButton queryKeys={[["task", id]]} />
+          <ViewerBadges resource={`task:${id}`} currentUserId={user?.id} />
         </div>
         <div className="flex items-center gap-2">
           {["failed", "cancelled"].includes(task.status) && (
@@ -800,6 +977,24 @@ export function TaskDetail() {
           {task.externalLink && (
             <ExternalSourceBadge externalLink={task.externalLink} />
           )}
+          {task.confidenceScore != null && (
+            <Badge
+              variant="outline"
+              className={cn(
+                "gap-1",
+                task.confidenceScore >= 8
+                  ? "text-green-500 border-green-500/30"
+                  : task.confidenceScore >= 6
+                  ? "text-yellow-500 border-yellow-500/30"
+                  : task.confidenceScore >= 4
+                  ? "text-orange-500 border-orange-500/30"
+                  : "text-red-500 border-red-500/30"
+              )}
+            >
+              <Activity className="h-3 w-3" />
+              Confidence: {task.confidenceScore.toFixed(1)}
+            </Badge>
+          )}
         </div>
 
         {/* Timestamps */}
@@ -822,9 +1017,9 @@ export function TaskDetail() {
           )}
         </div>
 
-        {/* PR button */}
-        {task.pullRequestUrl && (
-          <div>
+        {/* PR button and Feedback */}
+        <div className="flex flex-wrap items-center gap-3">
+          {task.pullRequestUrl && (
             <Button variant="outline" size="sm" asChild>
               <a
                 href={task.pullRequestUrl}
@@ -835,8 +1030,39 @@ export function TaskDetail() {
                 View Pull Request
               </a>
             </Button>
-          </div>
-        )}
+          )}
+
+          {/* AI Feedback buttons - show for completed or failed tasks */}
+          {(task.status === "completed" || task.status === "failed" || task.status === "partial_success") && (
+            <div className="flex items-center gap-2 ml-auto">
+              <span className="text-xs text-muted-foreground">Was this helpful?</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "h-8 w-8 p-0",
+                  taskFeedback === "positive" && "text-green-500 bg-green-500/10"
+                )}
+                onClick={() => feedbackMutation.mutate("thumbs_up")}
+                disabled={feedbackMutation.isPending || taskFeedback !== null}
+              >
+                <ThumbsUp className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "h-8 w-8 p-0",
+                  taskFeedback === "negative" && "text-red-500 bg-red-500/10"
+                )}
+                onClick={() => feedbackMutation.mutate("thumbs_down")}
+                disabled={feedbackMutation.isPending || taskFeedback !== null}
+              >
+                <ThumbsDown className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Error alert */}
@@ -868,14 +1094,37 @@ export function TaskDetail() {
         </Card>
       )}
 
-      {/* Planning questions form */}
-      {task.status === "awaiting_input" && task.planningQuestions && (
-        <PlanningQuestionsCard
-          taskId={task.id}
-          questions={task.planningQuestions.filter((q: any) => q.round === task.planningRound)}
-          currentRound={task.planningRound}
-          onSubmitted={() => queryClient.invalidateQueries({ queryKey: ["task", id] })}
-        />
+      {/* Approach selector - shown when approaches are available and none selected */}
+      {task.status === "awaiting_input" &&
+        task.approaches &&
+        Array.isArray(task.approaches) &&
+        task.approaches.length > 0 &&
+        (task.selectedApproach === null || task.planningRound === 0) && (
+          <ApproachSelector
+            taskId={task.id}
+            approaches={task.approaches}
+            selectedIndex={task.selectedApproach}
+            analysisContext={(task.metadata as any)?.approachAnalysisContext}
+            onSelected={() => queryClient.invalidateQueries({ queryKey: ["task", id] })}
+          />
+        )}
+
+      {/* Planning questions form - shown when awaiting input for clarification (not approach selection) */}
+      {task.status === "awaiting_input" &&
+        task.planningQuestions &&
+        task.planningQuestions.length > 0 &&
+        task.planningRound > 0 && (
+          <PlanningQuestionsCard
+            taskId={task.id}
+            questions={task.planningQuestions.filter((q: any) => q.round === task.planningRound)}
+            currentRound={task.planningRound}
+            onSubmitted={() => queryClient.invalidateQueries({ queryKey: ["task", id] })}
+          />
+        )}
+
+      {/* Task execution steps - shows progress checklist */}
+      {(task.status === "in_progress" || task.status === "completed" || task.status === "failed" || task.status === "partial_success") && (
+        <TaskSteps taskId={task.id} taskStatus={task.status} />
       )}
 
       {/* Tabs - default to agent-log when task is active */}
@@ -892,9 +1141,31 @@ export function TaskDetail() {
                 </span>
               )}
             </TabsTrigger>
+            <TabsTrigger value="live-view" className="gap-1.5">
+              Live View
+              {isLive && (
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                </span>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="forks" className="gap-1.5">
+              <GitFork className="h-3.5 w-3.5" />
+              Forks
+            </TabsTrigger>
             <TabsTrigger value="pull-request">Pull Request</TabsTrigger>
             <TabsTrigger value="commits">Commits</TabsTrigger>
             <TabsTrigger value="usage">Usage</TabsTrigger>
+            {task.artifacts && task.artifacts.length > 0 && (
+              <TabsTrigger value="artifacts" className="gap-1.5">
+                <FileText className="h-3.5 w-3.5" />
+                Artifacts
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-xs">
+                  {task.artifacts.length}
+                </Badge>
+              </TabsTrigger>
+            )}
           </TabsList>
         </div>
 
@@ -915,6 +1186,80 @@ export function TaskDetail() {
               </p>
             </CardContent>
           </Card>
+
+          {/* Relevant Memories - show context from past work */}
+          <MemorySuggestions
+            projectId={task.projectId || undefined}
+            repositoryId={task.repositoryId}
+            taskTitle={task.title}
+            taskDescription={task.description}
+            taskType={task.type}
+            affectedFiles={
+              Array.isArray(task.affectedFiles)
+                ? task.affectedFiles
+                : typeof task.affectedFiles === "string"
+                  ? JSON.parse(task.affectedFiles || "[]")
+                  : []
+            }
+            onNavigateToTask={(taskId) => navigate(`/tasks/${taskId}`)}
+          />
+
+          {/* Selected Approach Card */}
+          {task.approaches &&
+            Array.isArray(task.approaches) &&
+            task.approaches.length > 0 &&
+            task.selectedApproach !== null &&
+            task.selectedApproach >= 0 && (() => {
+              const approach = task.approaches[task.selectedApproach];
+              if (!approach) return null;
+              return (
+                <Card className="border-indigo-500/30 bg-indigo-500/5">
+                  <CardHeader>
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <BrainCircuit className="h-4 w-4 text-indigo-500" />
+                      <span className="text-indigo-500">Selected Approach: {approach.name}</span>
+                      <Badge
+                        variant="outline"
+                        className={`ml-auto text-xs ${
+                          approach.complexity === "low"
+                            ? "text-green-500 border-green-500/30"
+                            : approach.complexity === "high"
+                              ? "text-red-500 border-red-500/30"
+                              : "text-amber-500 border-amber-500/30"
+                        }`}
+                      >
+                        {approach.complexity} complexity
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <p className="text-sm text-muted-foreground">{approach.description}</p>
+                    <div className="grid md:grid-cols-2 gap-3 text-xs">
+                      <div className="bg-green-500/5 border border-green-500/20 rounded p-2">
+                        <strong className="text-green-500">Pros:</strong>
+                        <ul className="mt-1 space-y-0.5 text-muted-foreground">
+                          {approach.tradeoffs?.pros?.map((p: string, i: number) => (
+                            <li key={i} className="flex items-start gap-1">
+                              <span className="text-green-500">+</span> {p}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div className="bg-red-500/5 border border-red-500/20 rounded p-2">
+                        <strong className="text-red-500">Cons:</strong>
+                        <ul className="mt-1 space-y-0.5 text-muted-foreground">
+                          {approach.tradeoffs?.cons?.map((c: string, i: number) => (
+                            <li key={i} className="flex items-start gap-1">
+                              <span className="text-red-500">-</span> {c}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })()}
 
           {/* Enhanced Plan Card */}
           {task.enhancedPlan && (
@@ -1184,6 +1529,15 @@ export function TaskDetail() {
           </Card>
         </TabsContent>
 
+        {/* Live View Tab */}
+        <TabsContent value="live-view" className="space-y-4">
+          <LiveExecutionView
+            taskId={task.id}
+            isActive={isLive}
+            className="h-[600px]"
+          />
+        </TabsContent>
+
         {/* Usage Tab */}
         <TabsContent value="usage" className="space-y-4">
           {/* Cost Summary */}
@@ -1393,7 +1747,72 @@ export function TaskDetail() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Forks Tab */}
+        <TabsContent value="forks" className="space-y-4">
+          <SessionTreeWithComparison taskId={id!} />
+        </TabsContent>
+
+        {/* Artifacts Tab */}
+        {task.artifacts && task.artifacts.length > 0 && (
+          <TabsContent value="artifacts" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  Attached Artifacts
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {task.artifacts.map((artifact: {
+                    id: string;
+                    type: string;
+                    name: string;
+                    content: string;
+                    language?: string;
+                    createdAt: string;
+                  }) => (
+                    <ArtifactCard key={artifact.id} artifact={artifact} />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
+    </div>
+  );
+}
+
+// --- Session Tree with Comparison ---
+function SessionTreeWithComparison({ taskId }: { taskId: string }) {
+  const [compareTaskIds, setCompareTaskIds] = useState<string[] | null>(null);
+  const navigate = useNavigate();
+
+  const handleTaskSelect = (selectedId: string) => {
+    navigate(`/tasks/${selectedId}`);
+  };
+
+  const handleCompareSelect = (taskIds: string[]) => {
+    setCompareTaskIds(taskIds);
+  };
+
+  return (
+    <div className="space-y-4">
+      <SessionTree
+        taskId={taskId}
+        onTaskSelect={handleTaskSelect}
+        onCompareSelect={handleCompareSelect}
+      />
+
+      {compareTaskIds && compareTaskIds.length >= 2 && (
+        <PlanComparison
+          taskIds={compareTaskIds}
+          onClose={() => setCompareTaskIds(null)}
+          onTaskSelect={handleTaskSelect}
+        />
+      )}
     </div>
   );
 }

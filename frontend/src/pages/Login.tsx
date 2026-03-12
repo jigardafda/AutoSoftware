@@ -1,9 +1,28 @@
-import { Github, Gitlab, Shield, Sparkles, Zap, GitBranch } from "lucide-react";
+import { useState } from "react";
+import { Github, Gitlab, Shield, Sparkles, Zap, GitBranch, KeyRound } from "lucide-react";
 import { LogoIcon } from "@/components/Logo";
+import { api } from "@/lib/api";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5002";
+const IS_DEV = import.meta.env.DEV;
 
 export function Login() {
+  const [devLoading, setDevLoading] = useState(false);
+  const [devError, setDevError] = useState<string | null>(null);
+
+  const handleDevLogin = async () => {
+    setDevLoading(true);
+    setDevError(null);
+    try {
+      await api.auth.devLogin("admin@autosoftware.com");
+      window.location.href = "/dashboard";
+    } catch (err: any) {
+      setDevError(err.message || "Dev login failed");
+    } finally {
+      setDevLoading(false);
+    }
+  };
+
   return (
     <div className="relative min-h-screen flex overflow-hidden">
       {/* Background - Lighter slate with gradient */}
@@ -167,6 +186,34 @@ export function Login() {
                   variant="bitbucket"
                 />
               </div>
+
+              {/* Dev login - only in development */}
+              {IS_DEV && (
+                <div className="mt-6 pt-6 border-t border-[oklch(0.30_0.02_250)]">
+                  <p className="text-xs text-[oklch(0.55_0.02_250)] text-center mb-3">
+                    Development Mode
+                  </p>
+                  <button
+                    onClick={handleDevLogin}
+                    disabled={devLoading}
+                    className={`
+                      flex items-center justify-center gap-3 w-full h-12 rounded-xl
+                      font-medium text-sm transition-all duration-200
+                      bg-gradient-to-r from-[oklch(0.45_0.12_145)] to-[oklch(0.40_0.12_160)]
+                      text-white hover:from-[oklch(0.42_0.12_145)] hover:to-[oklch(0.37_0.12_160)]
+                      shadow-lg shadow-[oklch(0.40_0.12_145_/_0.3)]
+                      hover:scale-[1.02] hover:-translate-y-0.5 active:scale-[0.98]
+                      disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:translate-y-0
+                    `}
+                  >
+                    <KeyRound className="h-5 w-5" />
+                    <span>{devLoading ? "Logging in..." : "Dev Login (admin@autosoftware.com)"}</span>
+                  </button>
+                  {devError && (
+                    <p className="text-xs text-red-400 text-center mt-2">{devError}</p>
+                  )}
+                </div>
+              )}
 
               {/* Security note */}
               <div className="flex items-center justify-center gap-2 mt-8 pt-6 border-t border-[oklch(0.30_0.02_250)]">

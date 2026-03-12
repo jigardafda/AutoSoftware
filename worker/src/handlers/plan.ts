@@ -8,6 +8,12 @@ import { agentQueryWithUsage } from "../services/claude-query.js";
 import { getInstalledPluginPaths } from "../services/plugin-manager.js";
 import { getBoss } from "../boss.js";
 import { JOB_NAMES } from "@autosoftware/shared";
+import {
+  generateApproaches,
+  generatePlanForSelectedApproach,
+  type ImplementationApproach,
+  type ApproachGenerationResult,
+} from "../services/approach-generator.js";
 
 async function emitTaskLog(
   taskId: string,
@@ -138,6 +144,59 @@ export async function handleTaskPlanning(jobs: { data: { taskId: string } }[]) {
       console.log(`Loaded ${pluginPaths.length} plugins for planning task ${taskId}`);
     }
 
+    // Check if we need to generate approaches (round 0, no approaches yet)
+    const existingApproaches = (task.approaches as unknown as ImplementationApproach[]) || [];
+    const selectedApproach = task.selectedApproach;
+
+    if (task.planningRound === 0 && existingApproaches.length === 0) {
+      // Phase 1: Generate implementation approaches
+      await emitTaskLog(taskId, "plan", "step", "Analyzing codebase for implementation approaches...");
+
+      const approachResult = await generateApproaches({
+        taskId,
+        taskTitle: task.title,
+        taskDescription: task.description,
+        projectContext,
+        repoDir,
+        apiKeyId,
+        onLog: (level, message, metadata) =>
+          emitTaskLog(taskId, "plan", level, message, metadata || {}),
+      });
+
+      // Store approaches and wait for user selection
+      await prisma.task.update({
+        where: { id: taskId },
+        data: {
+          status: "awaiting_input",
+          approaches: approachResult.approaches as any,
+          // Pre-select the recommended approach (user can change)
+          selectedApproach: approachResult.recommendedIndex,
+          metadata: {
+            ...(task.metadata as object || {}),
+            approachAnalysisContext: approachResult.analysisContext,
+          },
+        },
+      });
+
+      await emitTaskLog(
+        taskId,
+        "plan",
+        "success",
+        `Generated ${approachResult.approaches.length} implementation approaches. Waiting for selection.`
+      );
+
+      console.log(
+        `Task ${taskId} generated ${approachResult.approaches.length} approaches, awaiting selection`
+      );
+      return;
+    }
+
+    // If approaches exist but none selected, wait for selection
+    if (existingApproaches.length > 0 && selectedApproach === null) {
+      console.log(`Task ${taskId} has approaches but none selected, keeping awaiting_input status`);
+      return;
+    }
+
     // Build previous answers context from all rounds
     let previousAnswersContext = "";
     if (task.planningQuestions.length > 0) {
@@ -164,7 +223,37 @@ export async function handleTaskPlanning(jobs: { data: { taskId: string } }[]) {
     const maxRounds = 3;
     const canAskMore = currentRound < maxRounds;
 
-    const prompt = `${projectContext ? projectContext + "\n---\n\n" : ""}You are an expert software engineer planning a task implementation.
+    // Build selected approach context if available
+    let selectedApproachContext = "";
+    if (existingApproaches.length > 0 && selectedApproach !== null && selectedApproach >= 0) {
+      const approach = existingApproaches[selectedApproach];
+      if (approach) {
+        selectedApproachContext = `
+## Selected Implementation Approach: ${approach.name}
+
+${approach.description}
+
+**Complexity:** ${approach.complexity}
+**Estimated Time:** ${approach.estimatedTime}
+**Affected Areas:** ${approach.affectedAreas?.join(", ") || "To be determined"}
+
+### Tradeoffs (User has reviewed and accepted)
+**Pros:**
+${approach.tradeoffs?.pros?.map((p: string) => `- ${p}`).join("\n") || "- N/A"}
+
+**Cons:**
+${approach.tradeoffs?.cons?.map((c: string) => `- ${c}`).join("\n") || "- N/A"}
+
+### Why This Approach
+${approach.reasoning || "Selected by user"}
+
+**IMPORTANT:** Your implementation plan MUST follow this selected approach precisely. Do not deviate from the chosen approach.
+
+`;
+      }
+    }
+
+    const prompt = `${projectContext ? projectContext + "\n---\n\n" : ""}${selectedApproachContext}You are an expert software engineer planning a task implementation.
 
 ## Task: ${task.title}
 
@@ -263,6 +352,24 @@ The \`affectedFiles\` array MUST list every file that will likely be created, mo
         estimatedCostUsd: { increment: planUsage.costUsd },
       },
     });
+
+    // Record platform usage for analytics tracking
+    await prisma.usageRecord.create({
+      data: {
+        userId: repo.userId,
+        repositoryId: repo.id,
+        projectId: task.projectId,
+        apiKeyId: apiKeyId ?? null,
+        source: "task_plan",
+        sourceId: taskId,
+        model: "claude-sonnet-4-20250514",
+        inputTokens: planUsage.inputTokens,
+        outputTokens: planUsage.outputTokens,
+        estimatedCostUsd: planUsage.costUsd,
+        authType: auth.authType,
+        metadata: { taskType: task.type, round: currentRound },
+      },
+    }).catch((err) => console.error("Failed to record plan usage:", err));
 
     if (response.status === "needs_input" && currentRound < maxRounds) {
       // Create planning questions and await user input

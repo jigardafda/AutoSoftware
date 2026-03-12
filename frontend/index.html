@@ -2,16 +2,28 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Viewport: disable zoom on mobile for app-like feel, enable safe-area -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
 
     <!-- Branding -->
     <title>AutoSoftware</title>
     <meta name="description" content="AI-powered code analysis and improvement" />
-    <meta name="theme-color" content="#6366f1" />
+    <meta name="theme-color" content="#6366f1" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0f0f12" media="(prefers-color-scheme: dark)" />
+
+    <!-- Mobile web app capable -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="AutoSoftware" />
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- Prevent telephone number detection on iOS -->
+    <meta name="format-detection" content="telephone=no" />
 
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/logo.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/logo.svg" />
     <link rel="manifest" href="/site.webmanifest" />
 
     <!-- Open Graph -->

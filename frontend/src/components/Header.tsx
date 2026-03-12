@@ -18,6 +18,9 @@ import { useAuth } from "@/lib/auth";
 import { Logo } from "@/components/Logo";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { ConnectionIndicator } from "@/components/ConnectionIndicator";
+import { ActivityPulse } from "@/components/ActivityPulse";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -50,6 +53,7 @@ const routeTitles: Record<string, string> = {
   "/scans": "Scans",
   "/activity": "Activity",
   "/queues": "Queues",
+  "/notifications": "Notifications",
   "/settings": "Settings",
 };
 
@@ -128,6 +132,15 @@ export function Header() {
 
         {/* Action buttons group */}
         <div className="flex items-center gap-1">
+          {/* Activity pulse - shows who's active */}
+          <ActivityPulse maxDisplay={3} showDropdown={true} />
+
+          {/* Connection status indicator */}
+          <ConnectionIndicator />
+
+          {/* Notifications bell */}
+          <NotificationBell />
+
           {/* AI Chat button */}
           <TooltipProvider delayDuration={0}>
             <Tooltip>

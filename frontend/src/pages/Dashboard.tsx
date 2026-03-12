@@ -90,14 +90,14 @@ export function Dashboard() {
   ).length;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 sm:space-y-4">
       <div className="flex items-center gap-3">
         <h2 className="text-lg font-semibold">Dashboard</h2>
         <RefreshButton queryKeys={["repos", "tasks"]} />
       </div>
 
-      {/* Metrics row */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      {/* Metrics row - 2 cols on mobile, 3 on sm, 6 on lg */}
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <MetricCard label="Total Repos" value={totalRepos} icon={GitFork} />
         <MetricCard label="Pending" value={pending} icon={Clock} />
         <MetricCard label="In Progress" value={inProgress} icon={Loader2} />
@@ -114,11 +114,14 @@ export function Dashboard() {
         />
       </div>
 
-      {/* Charts + AI Insights row */}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+      {/* Charts + AI Insights row - stack on mobile */}
+      <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 lg:grid-cols-3">
         <TaskChart tasks={taskList} />
         <TaskTypeChart tasks={taskList} />
-        <AiInsights tasks={taskList} repos={repoList} />
+        {/* AI Insights spans full width on mobile, takes its own column on larger screens */}
+        <div className="md:col-span-2 lg:col-span-1">
+          <AiInsights tasks={taskList} repos={repoList} />
+        </div>
       </div>
 
       {/* Activity Feed */}

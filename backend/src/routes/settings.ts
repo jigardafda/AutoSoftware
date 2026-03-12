@@ -1,10 +1,17 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "../db.js";
+import type { TaskPriority, TaskType } from "@autosoftware/shared";
+
+export interface GitHubLabelMapping {
+  priorityLabels?: Record<string, TaskPriority>;
+  typeLabels?: Record<string, TaskType>;
+}
 
 export interface UserSettings {
   scanBudget?: number;
   taskBudget?: number;
   planBudget?: number;
+  githubLabelMapping?: GitHubLabelMapping;
 }
 
 const DEFAULT_SETTINGS: Required<UserSettings> = {
@@ -171,5 +178,170 @@ export const settingsRoutes: FastifyPluginAsync = async (app) => {
         daily,
       },
     };
+  });
+
+  // ============================================================================
+  // GitHub Label Mapping Settings
+  // ============================================================================
+
+  // GET /settings/github-labels - Get current GitHub label mappings
+  app.get("/github-labels", async (request) => {
+    const user = await prisma.user.findUnique({
+      where: { id: request.userId },
+      select: { settings: true },
+    });
+
+    const settings = (user?.settings as UserSettings) || {};
+    const labelMapping = settings.githubLabelMapping || {};
+
+    // Return custom mappings with default values shown
+    return {
+      data: {
+        customMappings: labelMapping,
+        defaultPriorityLabels: {
+          "priority: critical": "critical",
+          "priority: high": "high",
+          "priority: medium": "medium",
+          "priority: low": "low",
+          "p0": "critical",
+          "p1": "high",
+          "p2": "medium",
+          "p3": "low",
+          "urgent": "critical",
+          "blocker": "critical",
+        },
+        defaultTypeLabels: {
+          "bug": "bugfix",
+          "feature": "feature",
+          "enhancement": "feature",
+          "improvement": "improvement",
+          "refactor": "refactor",
+          "tech-debt": "refactor",
+          "security": "security",
+        },
+      },
+    };
+  });
+
+  // PUT /settings/github-labels - Update GitHub label mappings
+  app.put<{
+    Body: {
+      priorityLabels?: Record<string, TaskPriority>;
+      typeLabels?: Record<string, TaskType>;
+    };
+  }>("/github-labels", async (request, reply) => {
+    const { priorityLabels, typeLabels } = request.body;
+
+    // Validate priorities
+    const validPriorities = ["low", "medium", "high", "critical"];
+    if (priorityLabels) {
+      for (const [label, priority] of Object.entries(priorityLabels)) {
+        if (!validPriorities.includes(priority)) {
+          return reply.code(400).send({
+            error: { message: `Invalid priority "${priority}" for label "${label}"` },
+          });
+        }
+      }
+    }
+
+    // Validate types
+    const validTypes = ["improvement", "bugfix", "feature", "refactor", "security"];
+    if (typeLabels) {
+      for (const [label, type] of Object.entries(typeLabels)) {
+        if (!validTypes.includes(type)) {
+          return reply.code(400).send({
+            error: { message: `Invalid type "${type}" for label "${label}"` },
+          });
+        }
+      }
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: request.userId },
+      select: { settings: true },
+    });
+
+    const currentSettings = (user?.settings as UserSettings) || {};
+    const currentMapping = currentSettings.githubLabelMapping || {};
+
+    const newMapping: GitHubLabelMapping = {
+      priorityLabels: {
+        ...(currentMapping.priorityLabels || {}),
+        ...(priorityLabels || {}),
+      },
+      typeLabels: {
+        ...(currentMapping.typeLabels || {}),
+        ...(typeLabels || {}),
+      },
+    };
+
+    // Clean up empty values
+    if (newMapping.priorityLabels) {
+      for (const key of Object.keys(newMapping.priorityLabels)) {
+        if (!newMapping.priorityLabels[key]) {
+          delete newMapping.priorityLabels[key];
+        }
+      }
+    }
+    if (newMapping.typeLabels) {
+      for (const key of Object.keys(newMapping.typeLabels)) {
+        if (!newMapping.typeLabels[key]) {
+          delete newMapping.typeLabels[key];
+        }
+      }
+    }
+
+    const newSettings: UserSettings = {
+      ...currentSettings,
+      githubLabelMapping: newMapping,
+    };
+
+    await prisma.user.update({
+      where: { id: request.userId },
+      data: { settings: newSettings },
+    });
+
+    return { data: { githubLabelMapping: newMapping } };
+  });
+
+  // DELETE /settings/github-labels/:label - Remove a custom label mapping
+  app.delete<{
+    Params: { label: string };
+    Querystring: { mappingType: "priority" | "type" };
+  }>("/github-labels/:label", async (request, reply) => {
+    const { label } = request.params;
+    const { mappingType } = request.query;
+
+    if (!mappingType || !["priority", "type"].includes(mappingType)) {
+      return reply.code(400).send({
+        error: { message: "mappingType query param must be 'priority' or 'type'" },
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: request.userId },
+      select: { settings: true },
+    });
+
+    const currentSettings = (user?.settings as UserSettings) || {};
+    const currentMapping = currentSettings.githubLabelMapping || {};
+
+    if (mappingType === "priority" && currentMapping.priorityLabels) {
+      delete currentMapping.priorityLabels[label];
+    } else if (mappingType === "type" && currentMapping.typeLabels) {
+      delete currentMapping.typeLabels[label];
+    }
+
+    await prisma.user.update({
+      where: { id: request.userId },
+      data: {
+        settings: {
+          ...currentSettings,
+          githubLabelMapping: currentMapping,
+        },
+      },
+    });
+
+    return { data: { success: true } };
   });
 };

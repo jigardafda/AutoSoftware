@@ -3,7 +3,11 @@ export type RepoStatus = "idle" | "scanning" | "error";
 export type TaskType = "improvement" | "bugfix" | "feature" | "refactor" | "security";
 export type TaskPriority = "low" | "medium" | "high" | "critical";
 export type TaskStatus = "planning" | "awaiting_input" | "planned" | "pending" | "in_progress" | "completed" | "failed" | "cancelled";
-export type TaskSource = "auto_scan" | "manual" | "external_import" | "embed";
+export type TaskSource = "auto_scan" | "manual" | "external_import" | "embed" | "ai_assistant";
+
+// AI Assistant artifact types
+export type ChatArtifactType = "html" | "react" | "svg" | "code" | "markdown" | "mermaid" | "json";
+export type RefactorType = "rename" | "move" | "extract" | "inline" | "restructure";
 export type ScanStatus = "queued" | "in_progress" | "completed" | "failed" | "cancelled";
 export type ScanSource = "manual" | "scheduled";
 
@@ -40,6 +44,8 @@ export interface TaskDTO {
   planningRound: number;
   enhancedPlan: string | null;
   affectedFiles: string[];
+  refactorType: RefactorType | null;
+  multiFileMode: boolean;
   pullRequestUrl: string | null;
   pullRequestStatus: string | null;
   scanResult?: {
@@ -314,4 +320,83 @@ export interface UpdateEmbedConfigInput {
   maxTotalSize?: number;
   allowedFileTypes?: string[];
   language?: string;
+}
+
+// --- Batch Operations types ---
+
+export type BatchOperationStatus = "pending" | "in_progress" | "completed" | "failed" | "cancelled";
+
+export interface BatchOperationDTO {
+  id: string;
+  name: string;
+  description: string;
+  status: BatchOperationStatus;
+  totalTasks: number;
+  completedTasks: number;
+  failedTasks: number;
+  executionMode: "parallel" | "sequential";
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  tasks?: BatchOperationTaskDTO[];
+}
+
+export interface BatchOperationTaskDTO {
+  id: string;
+  title?: string;
+  repositoryId: string;
+  repositoryName: string;
+  status: string;
+  pullRequestUrl: string | null;
+  createdAt?: string;
+  completedAt?: string | null;
+  order: number;
+}
+
+export interface CreateBatchInput {
+  name: string;
+  description: string;
+  repositoryIds: string[];
+  taskTemplate: {
+    title: string;
+    description: string;
+    type: TaskType;
+    priority: TaskPriority;
+    targetBranch?: string;
+  };
+  executionMode?: "parallel" | "sequential";
+  skipPlanning?: boolean;
+  projectId?: string;
+}
+
+// --- Agent Messaging types ---
+
+export type AgentMessageType =
+  | "CLAIM_FILE"
+  | "RELEASE_FILE"
+  | "SYNC_CHANGES"
+  | "REQUEST_REVIEW"
+  | "ACKNOWLEDGE"
+  | "CONFLICT_DETECTED"
+  | "BATCH_COORDINATE";
+
+export interface AgentMessageDTO {
+  id: string;
+  type: AgentMessageType;
+  senderId: string;
+  targetId: string | null;
+  repositoryId: string;
+  filePath: string | null;
+  payload: Record<string, unknown>;
+  acknowledged: boolean;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
+export interface FileLockDTO {
+  filePath: string;
+  agentId: string;
+  repositoryId: string;
+  lockedAt: string;
+  expiresAt: string;
 }

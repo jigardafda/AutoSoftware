@@ -156,7 +156,7 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
     });
     if (!repo) return reply.code(404).send({ error: { message: "Repo not found" } });
 
-    const [tasks, scans, tasksByStatus, tasksByType, scansByStatus] = await Promise.all([
+    const [tasks, scans, tasksByStatus, tasksByType, scansByStatus, latestCompletedScan] = await Promise.all([
       prisma.task.findMany({
         where: { repositoryId: repo.id },
         orderBy: { createdAt: "desc" },
@@ -181,6 +181,14 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
         by: ["status"],
         where: { repositoryId: repo.id },
         _count: { id: true },
+      }),
+      // Fetch latest completed scan with full code analysis data
+      prisma.scanResult.findFirst({
+        where: { repositoryId: repo.id, status: "completed" },
+        orderBy: { completedAt: "desc" },
+        include: {
+          codeAnalysis: true,
+        },
       }),
     ]);
 
@@ -245,6 +253,14 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
           totalRequests,
           daily: dailySorted,
         },
+        // Latest completed scan with code analysis for the Analysis tab
+        latestAnalysis: latestCompletedScan ? {
+          scanId: latestCompletedScan.id,
+          completedAt: latestCompletedScan.completedAt,
+          primaryLanguage: latestCompletedScan.primaryLanguage,
+          languageProfile: latestCompletedScan.languageProfile,
+          codeAnalysis: latestCompletedScan.codeAnalysis,
+        } : null,
       },
     };
   });

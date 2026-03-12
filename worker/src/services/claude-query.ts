@@ -1,6 +1,7 @@
 import { query, type SDKResultSuccess, type SDKResultError } from "@anthropic-ai/claude-agent-sdk";
 import { prisma } from "../db.js";
 import { estimateCost } from "@autosoftware/shared";
+import { emitTerminalOutput, emitFileChange } from "./event-notifier.js";
 
 interface QueryOptions {
   model?: string;
@@ -195,6 +196,8 @@ interface AgentQueryWithUsageOptions {
   sourceId?: string;
   /** Callback to emit logs during execution */
   onLog?: (level: string, message: string, metadata?: Record<string, any>) => Promise<void>;
+  /** Task ID for live streaming events */
+  taskId?: string;
 }
 
 /**
@@ -205,7 +208,7 @@ export async function agentQueryWithUsage(
   config: AgentQueryConfig,
   usageOptions: AgentQueryWithUsageOptions
 ): Promise<AgentQueryResult> {
-  const { apiKeyId, source, sourceId, onLog } = usageOptions;
+  const { apiKeyId, source, sourceId, onLog, taskId } = usageOptions;
   const model = config.options.model || "claude-sonnet-4-20250514";
 
   let result = "";
@@ -230,6 +233,11 @@ export async function agentQueryWithUsage(
             ? block.text.slice(0, 200) + "..."
             : block.text;
           await onLog?.("info", preview, { turn: turnCount, type: "text" });
+
+          // Emit terminal output for live view
+          if (taskId) {
+            await emitTerminalOutput(taskId, "stdout", block.text).catch(() => {});
+          }
         }
         // Log tool calls
         if (block.type === "tool_use") {
@@ -238,6 +246,47 @@ export async function agentQueryWithUsage(
             tool: block.name,
             input: block.input
           });
+
+          // Emit terminal output for tool calls
+          if (taskId) {
+            const toolOutput = `[Tool: ${block.name}] ${JSON.stringify(block.input, null, 2)}`;
+            await emitTerminalOutput(taskId, "stdout", toolOutput).catch(() => {});
+
+            // Emit file change events for Edit/Write tools
+            if (block.name === "Edit" || block.name === "Write") {
+              const input = block.input as { file_path?: string; old_string?: string; new_string?: string; content?: string };
+              if (input.file_path) {
+                const operation = block.name === "Write" ? "create" : "modify";
+                await emitFileChange(taskId, operation, input.file_path, {
+                  oldContent: input.old_string,
+                  newContent: input.new_string || input.content,
+                }).catch(() => {});
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Log tool results
+    if (message.type === "user" && (message as any).message?.content) {
+      const content = (message as any).message.content;
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === "tool_result" && taskId) {
+            const resultContent = typeof block.content === "string"
+              ? block.content
+              : JSON.stringify(block.content);
+            // Emit tool result as terminal output
+            const truncated = resultContent.length > 500
+              ? resultContent.slice(0, 500) + "... [truncated]"
+              : resultContent;
+            await emitTerminalOutput(
+              taskId,
+              block.is_error ? "stderr" : "stdout",
+              `[Result] ${truncated}`
+            ).catch(() => {});
+          }
         }
       }
     }

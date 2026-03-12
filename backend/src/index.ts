@@ -2,6 +2,7 @@ import "./types.js";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
+import { Pool } from "pg";
 import { config } from "./config.js";
 import { prisma } from "./db.js";
 import { authRoutes } from "./routes/auth.js";
@@ -17,10 +18,38 @@ import { integrationRoutes } from "./routes/integrations.js";
 import { embedRoutes } from "./routes/embed.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { pluginRoutes } from "./routes/plugins.js";
+import { analyticsRoutes } from "./routes/analytics.js";
+import { presenceRoutes } from "./routes/presence.js";
+import { batchRoutes } from "./routes/batch.js";
+import { chatRoutes } from "./routes/chat.js";
+import { aiAssistantRoutes } from "./routes/ai-assistant.js";
+import { taskForkRoutes } from "./routes/task-fork.js";
+import { taskGenealogyRoutes } from "./routes/task-genealogy.js";
+import { collaborationRoutes } from "./routes/collaboration.js";
+import { dependencyRoutes } from "./routes/dependencies.js";
+import { predictionRoutes } from "./routes/predictions.js";
+import { codeHealthRoutes } from "./routes/code-health.js";
+import { webhookRoutes } from "./routes/webhooks.js";
+import { suggestionRoutes } from "./routes/suggestions.js";
+import { feedbackRoutes } from "./routes/feedback.js";
+import { teamRoutes } from "./routes/team.js";
+import { memoryRoutes } from "./routes/memory.js";
+import { notificationRoutes } from "./routes/notifications.js";
+import { canvasRoutes } from "./routes/canvas.js";
+import { personalizationRoutes } from "./routes/personalization.js";
+import { triggerRoutes } from "./routes/triggers.js";
+import { aiMetricsRoutes } from "./routes/ai-metrics.js";
 import { schedulerService } from "./services/scheduler.js";
+import { registerWebSocket } from "./websocket/index.js";
+import { initTerminalStream, shutdownTerminalStream } from "./websocket/terminal-stream.js";
 
 // Register integration adapters
 import "./services/integrations/index.js";
+
+// Create PostgreSQL pool for WebSocket event listener
+const pool = new Pool({
+  connectionString: config.databaseUrl,
+});
 
 const app = Fastify({ logger: true });
 
@@ -51,6 +80,18 @@ app.decorate("requireAuth", async (request: any, reply: any) => {
   }
 });
 
+// Register WebSocket support
+try {
+  await registerWebSocket(app, pool);
+  console.log("WebSocket registered at /ws");
+
+  // Initialize terminal streaming for live execution view
+  initTerminalStream(pool);
+  console.log("Terminal streaming initialized");
+} catch (err) {
+  console.warn("WebSocket registration failed:", err);
+}
+
 await app.register(authRoutes, { prefix: "/api/auth" });
 await app.register(repoRoutes, { prefix: "/api/repos" });
 await app.register(taskRoutes, { prefix: "/api/tasks" });
@@ -63,6 +104,27 @@ await app.register(projectRoutes, { prefix: "/api/projects" });
 await app.register(integrationRoutes, { prefix: "/api/integrations" });
 await app.register(settingsRoutes, { prefix: "/api/settings" });
 await app.register(pluginRoutes, { prefix: "/api/plugins" });
+await app.register(analyticsRoutes, { prefix: "/api/analytics" });
+await app.register(presenceRoutes, { prefix: "/api/presence" });
+await app.register(batchRoutes, { prefix: "/api/batch" });
+await app.register(chatRoutes, { prefix: "/api/chat" });
+await app.register(aiAssistantRoutes, { prefix: "/api/ai-assistant" });
+await app.register(taskForkRoutes, { prefix: "/api/tasks" });
+await app.register(taskGenealogyRoutes, { prefix: "/api/tasks" });
+await app.register(collaborationRoutes, { prefix: "/api/collaboration" });
+await app.register(dependencyRoutes, { prefix: "/api/dependencies" });
+await app.register(predictionRoutes, { prefix: "/api/predictions" });
+await app.register(codeHealthRoutes, { prefix: "/api/code-health" });
+await app.register(webhookRoutes, { prefix: "/webhooks" });
+await app.register(suggestionRoutes, { prefix: "/api/suggestions" });
+await app.register(feedbackRoutes, { prefix: "/api/feedback" });
+await app.register(teamRoutes, { prefix: "/api/team" });
+await app.register(memoryRoutes, { prefix: "/api/memory" });
+await app.register(notificationRoutes, { prefix: "/api/notifications" });
+await app.register(canvasRoutes, { prefix: "/api/canvas" });
+await app.register(personalizationRoutes, { prefix: "/api/personalization" });
+await app.register(triggerRoutes, { prefix: "/api/triggers" });
+await app.register(aiMetricsRoutes, { prefix: "/api/ai-metrics" });
 await app.register(embedRoutes, { prefix: "/embed" });
 
 app.get("/api/health", async () => ({ status: "ok" }));
@@ -80,6 +142,8 @@ console.log(`Backend running on port ${config.port}`);
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, async () => {
     await schedulerService.stop();
+    await shutdownTerminalStream();
+    await pool.end();
     await prisma.$disconnect();
     await app.close();
     process.exit(0);
