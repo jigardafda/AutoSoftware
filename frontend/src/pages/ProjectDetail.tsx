@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -47,6 +47,8 @@ import {
 } from "@/components/ui/table";
 import { Pagination, paginate } from "@/components/Pagination";
 import { RefreshButton } from "@/components/RefreshButton";
+import { TaskKanbanBoard } from "@/components/tasks/TaskKanbanBoard";
+import { TaskViewToolbar, type TaskViewMode } from "@/components/tasks/TaskViewToolbar";
 import { AddRepoToProjectDialog } from "@/components/projects/AddRepoToProjectDialog";
 import { DocumentEditor } from "@/components/projects/DocumentEditor";
 import { ProviderIcon } from "@/components/integrations/ProviderIcon";
@@ -160,6 +162,15 @@ export function ProjectDetail() {
   const [defaultBranchValue, setDefaultBranchValue] = useState("");
   const [editingRepoBranch, setEditingRepoBranch] = useState<string | null>(null);
   const [repoBranchValue, setRepoBranchValue] = useState("");
+  const [taskSearch, setTaskSearch] = useState("");
+  const [taskViewMode, setTaskViewMode] = useState<TaskViewMode>(() => {
+    return (localStorage.getItem("project-tasks-view-mode") as TaskViewMode) || "list";
+  });
+
+  const handleTaskViewModeChange = useCallback((mode: TaskViewMode) => {
+    setTaskViewMode(mode);
+    localStorage.setItem("project-tasks-view-mode", mode);
+  }, []);
 
   const VALID_TABS = ["overview", "repos", "documents", "tasks", "integrations", "usage", "embed"] as const;
   const tab = useMemo(() => {
@@ -281,7 +292,19 @@ export function ProjectDetail() {
   }
 
   const existingRepoIds = new Set<string>(project.repos?.map((r: any) => r.id) || []);
-  const pagedTasks = paginate(projectTasks, tasksPage);
+
+  const filteredProjectTasks = useMemo(() => {
+    if (!taskSearch.trim()) return projectTasks;
+    const q = taskSearch.toLowerCase();
+    return projectTasks.filter((t: any) =>
+      t.title?.toLowerCase().includes(q) ||
+      t.repositoryName?.toLowerCase().includes(q) ||
+      t.type?.toLowerCase().includes(q) ||
+      t.targetBranch?.toLowerCase().includes(q)
+    );
+  }, [projectTasks, taskSearch]);
+
+  const pagedTasks = paginate(filteredProjectTasks, tasksPage);
 
   const totalTasks = stats?.totalTasks ?? 0;
   const totalCost = stats?.usage?.totalCost ?? 0;
@@ -666,59 +689,87 @@ export function ProjectDetail() {
             </Card>
           ) : (
             <>
-              <div className="overflow-x-auto rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-8">Status</TableHead>
-                      <TableHead>Title</TableHead>
-                      <TableHead className="w-20">Type</TableHead>
-                      <TableHead className="w-20">Priority</TableHead>
-                      <TableHead className="w-16">Source</TableHead>
-                      <TableHead className="w-8">PR</TableHead>
-                      <TableHead className="w-20 text-right">Created</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pagedTasks.map((task: any) => {
-                      const statusCfg = STATUS_ICON[task.status] || STATUS_ICON.pending;
-                      const Icon = statusCfg.icon;
-                      return (
-                        <TableRow key={task.id} className="cursor-pointer" onClick={() => navigate(`/tasks/${task.id}`)}>
-                          <TableCell><Icon className={cn("h-4 w-4", statusCfg.className)} /></TableCell>
-                          <TableCell>
-                            <p className="text-sm font-medium truncate max-w-[300px]">{task.title}</p>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", TYPE_COLOR[task.type])}>
-                              {task.type}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", PRIORITY_COLOR[task.priority])}>
-                              {task.priority}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-xs text-muted-foreground">{task.source === "auto_scan" ? "Auto" : "Manual"}</span>
-                          </TableCell>
-                          <TableCell onClick={(e) => e.stopPropagation()}>
-                            {task.pullRequestUrl ? (
-                              <a href={task.pullRequestUrl} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">
-                                <ExternalLink className="h-3.5 w-3.5" />
-                              </a>
-                            ) : (
-                              <span className="text-muted-foreground/40">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right text-xs text-muted-foreground">{relativeTime(task.createdAt)}</TableCell>
+              <TaskViewToolbar
+                search={taskSearch}
+                onSearchChange={setTaskSearch}
+                viewMode={taskViewMode}
+                onViewModeChange={handleTaskViewModeChange}
+              />
+
+              {filteredProjectTasks.length === 0 ? (
+                <Card>
+                  <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                    No tasks match "{taskSearch}".
+                    <button
+                      className="ml-1 text-primary underline underline-offset-2 hover:text-primary/80"
+                      onClick={() => setTaskSearch("")}
+                    >
+                      Clear search
+                    </button>
+                  </CardContent>
+                </Card>
+              ) : taskViewMode === "kanban" ? (
+                <TaskKanbanBoard
+                  tasks={filteredProjectTasks}
+                  onTaskClick={(task) => navigate(`/tasks/${task.id}`)}
+                />
+              ) : (
+                <>
+                  <div className="overflow-x-auto rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-8">Status</TableHead>
+                          <TableHead>Title</TableHead>
+                          <TableHead className="w-20">Type</TableHead>
+                          <TableHead className="w-20">Priority</TableHead>
+                          <TableHead className="w-16">Source</TableHead>
+                          <TableHead className="w-8">PR</TableHead>
+                          <TableHead className="w-20 text-right">Created</TableHead>
                         </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-              <Pagination page={tasksPage} total={projectTasks.length} onPageChange={setTasksPage} />
+                      </TableHeader>
+                      <TableBody>
+                        {pagedTasks.map((task: any) => {
+                          const statusCfg = STATUS_ICON[task.status] || STATUS_ICON.pending;
+                          const Icon = statusCfg.icon;
+                          return (
+                            <TableRow key={task.id} className="cursor-pointer" onClick={() => navigate(`/tasks/${task.id}`)}>
+                              <TableCell><Icon className={cn("h-4 w-4", statusCfg.className)} /></TableCell>
+                              <TableCell>
+                                <p className="text-sm font-medium truncate max-w-[300px]">{task.title}</p>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", TYPE_COLOR[task.type])}>
+                                  {task.type}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", PRIORITY_COLOR[task.priority])}>
+                                  {task.priority}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <span className="text-xs text-muted-foreground">{task.source === "auto_scan" ? "Auto" : "Manual"}</span>
+                              </TableCell>
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                {task.pullRequestUrl ? (
+                                  <a href={task.pullRequestUrl} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                  </a>
+                                ) : (
+                                  <span className="text-muted-foreground/40">-</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right text-xs text-muted-foreground">{relativeTime(task.createdAt)}</TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <Pagination page={tasksPage} total={filteredProjectTasks.length} onPageChange={setTasksPage} />
+                </>
+              )}
             </>
           )}
         </TabsContent>

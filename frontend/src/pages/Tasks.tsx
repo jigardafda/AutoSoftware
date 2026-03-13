@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TaskFilters } from "@/components/tasks/TaskFilters";
 import { TaskTable } from "@/components/tasks/TaskTable";
+import { TaskKanbanBoard } from "@/components/tasks/TaskKanbanBoard";
+import { TaskViewToolbar, type TaskViewMode } from "@/components/tasks/TaskViewToolbar";
 import { CreateTaskSheet } from "@/components/tasks/CreateTaskSheet";
 import { CreateBatchDialog } from "@/components/tasks/CreateBatchDialog";
 import { EmptyState } from "@/components/EmptyState";
@@ -45,6 +47,10 @@ export function Tasks() {
   const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [page, setPage] = useState(0);
+  const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<TaskViewMode>(() => {
+    return (localStorage.getItem("tasks-view-mode") as TaskViewMode) || "list";
+  });
 
   // Handle navigation state for opening create sheet from mobile FAB
   useEffect(() => {
@@ -72,13 +78,31 @@ export function Tasks() {
     queryFn: () => api.tasks.list(Object.keys(queryParams).length ? queryParams : undefined),
   });
 
-  const { sort, onSort, sorted } = useSort(tasks, TASK_SORT_CONFIG, {
+  // Filter tasks by search query
+  const filteredTasks = useMemo(() => {
+    if (!search.trim()) return tasks;
+    const q = search.toLowerCase();
+    return tasks.filter((t: any) =>
+      t.title?.toLowerCase().includes(q) ||
+      t.repositoryName?.toLowerCase().includes(q) ||
+      t.repository?.fullName?.toLowerCase().includes(q) ||
+      t.type?.toLowerCase().includes(q) ||
+      t.targetBranch?.toLowerCase().includes(q)
+    );
+  }, [tasks, search]);
+
+  const { sort, onSort, sorted } = useSort(filteredTasks, TASK_SORT_CONFIG, {
     key: "createdAt",
     direction: "desc",
   });
 
-  // Reset page when filters or sort change
-  useEffect(() => { setPage(0); }, [filters, sort]);
+  const handleViewModeChange = useCallback((mode: TaskViewMode) => {
+    setViewMode(mode);
+    localStorage.setItem("tasks-view-mode", mode);
+  }, []);
+
+  // Reset page when filters, sort, or search change
+  useEffect(() => { setPage(0); }, [filters, sort, search]);
 
   const pagedTasks = useMemo(() => paginate(sorted, page), [sorted, page]);
 
@@ -229,7 +253,9 @@ export function Tasks() {
           <h2 className="text-lg font-semibold">Tasks</h2>
           {!isLoading && (
             <Badge variant="secondary" className="text-xs">
-              {tasks.length}
+              {search && filteredTasks.length !== tasks.length
+                ? `${filteredTasks.length}/${tasks.length}`
+                : tasks.length}
             </Badge>
           )}
           <RefreshButton queryKeys={[["tasks", queryParams]]} />
@@ -253,12 +279,20 @@ export function Tasks() {
         </div>
       </div>
 
-      {/* Filters */}
-      <TaskFilters
-        filters={filters}
-        onChange={handleFilterChange}
-        onClear={handleFilterClear}
-      />
+      {/* Filters + Search + View Toggle */}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <TaskFilters
+          filters={filters}
+          onChange={handleFilterChange}
+          onClear={handleFilterClear}
+        />
+        <TaskViewToolbar
+          search={search}
+          onSearchChange={setSearch}
+          viewMode={viewMode}
+          onViewModeChange={handleViewModeChange}
+        />
+      </div>
 
       {/* Bulk actions bar - scrollable on mobile */}
       {selectedIds.size > 0 && (
@@ -353,30 +387,36 @@ export function Tasks() {
         </div>
       )}
 
-      {/* Table */}
+      {/* Task List / Kanban */}
       {isLoading ? (
         <div className="space-y-3">
-          {/* Skeleton filter bar */}
-          <div className="flex items-center gap-2">
-            <Skeleton className="h-8 w-28" />
-            <Skeleton className="h-8 w-28" />
-            <Skeleton className="h-8 w-28" />
-          </div>
-          {/* Skeleton table rows */}
-          <div className="rounded-md border">
-            <div className="border-b px-4 py-3">
-              <Skeleton className="h-4 w-full max-w-lg" />
+          {viewMode === "kanban" ? (
+            <div className="flex gap-3 overflow-hidden">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="w-[280px] shrink-0 rounded-xl border p-3 space-y-2">
+                  <Skeleton className="h-5 w-24" />
+                  <Skeleton className="h-24 w-full rounded-lg" />
+                  <Skeleton className="h-24 w-full rounded-lg" />
+                  <Skeleton className="h-24 w-full rounded-lg" />
+                </div>
+              ))}
             </div>
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-4 border-b px-4 py-3 last:border-0">
-                <Skeleton className="h-4 w-4" />
-                <Skeleton className="h-4 w-48" />
-                <Skeleton className="h-5 w-16 rounded-full" />
-                <Skeleton className="h-5 w-16 rounded-full" />
-                <Skeleton className="h-4 w-24 ml-auto" />
+          ) : (
+            <div className="rounded-md border">
+              <div className="border-b px-4 py-3">
+                <Skeleton className="h-4 w-full max-w-lg" />
               </div>
-            ))}
-          </div>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-4 border-b px-4 py-3 last:border-0">
+                  <Skeleton className="h-4 w-4" />
+                  <Skeleton className="h-4 w-48" />
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                  <Skeleton className="h-4 w-24 ml-auto" />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       ) : tasks.length === 0 ? (
         <EmptyState
@@ -390,6 +430,19 @@ export function Tasks() {
             </Button>
           }
         />
+      ) : filteredTasks.length === 0 ? (
+        <EmptyState
+          icon={CheckCircle2}
+          title="No matching tasks"
+          description={`No tasks match "${search}". Try a different search term.`}
+          action={
+            <Button size="sm" variant="outline" onClick={() => setSearch("")}>
+              Clear search
+            </Button>
+          }
+        />
+      ) : viewMode === "kanban" ? (
+        <TaskKanbanBoard tasks={sorted} onTaskClick={handleRowClick} />
       ) : (
         <>
           <TaskTable
@@ -404,7 +457,7 @@ export function Tasks() {
             onRetry={(id) => bulkRetryMutation.mutate([id])}
             onExecute={(id) => bulkExecuteMutation.mutate([id])}
           />
-          <Pagination page={page} total={tasks.length} onPageChange={setPage} />
+          <Pagination page={page} total={filteredTasks.length} onPageChange={setPage} />
         </>
       )}
 

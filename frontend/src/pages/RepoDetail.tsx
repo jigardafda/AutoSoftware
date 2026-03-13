@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -58,6 +58,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Pagination, paginate } from "@/components/Pagination";
 import { BranchSelect } from "@/components/BranchSelect";
 import { RefreshButton } from "@/components/RefreshButton";
+import { TaskKanbanBoard } from "@/components/tasks/TaskKanbanBoard";
+import { TaskViewToolbar, type TaskViewMode } from "@/components/tasks/TaskViewToolbar";
 import { ScanAnalysisDashboard } from "@/components/scan-analysis";
 import {
   AreaChart,
@@ -189,6 +191,15 @@ export function RepoDetail() {
   const [expandedScan, setExpandedScan] = useState<string | null>(null);
   const [scanLogs, setScanLogs] = useState<Record<string, any[]>>({});
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
+  const [repoTaskSearch, setRepoTaskSearch] = useState("");
+  const [repoTaskViewMode, setRepoTaskViewMode] = useState<TaskViewMode>(() => {
+    return (localStorage.getItem("repo-tasks-view-mode") as TaskViewMode) || "list";
+  });
+
+  const handleRepoTaskViewModeChange = useCallback((mode: TaskViewMode) => {
+    setRepoTaskViewMode(mode);
+    localStorage.setItem("repo-tasks-view-mode", mode);
+  }, []);
 
   // Dialog states
   const [scanDialogOpen, setScanDialogOpen] = useState(false);
@@ -329,6 +340,20 @@ export function RepoDetail() {
     }
   };
 
+  const allTasks = stats?.tasks ?? [];
+  const filteredRepoTasks = useMemo(() => {
+    if (!repoTaskSearch.trim()) return allTasks;
+    const q = repoTaskSearch.toLowerCase();
+    return allTasks.filter((t: any) =>
+      t.title?.toLowerCase().includes(q) ||
+      t.type?.toLowerCase().includes(q) ||
+      t.targetBranch?.toLowerCase().includes(q)
+    );
+  }, [allTasks, repoTaskSearch]);
+
+  const pagedTasks = paginate(filteredRepoTasks, tasksPage);
+  const pagedScans = paginate(stats?.scans ?? [], scansPage);
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -351,8 +376,6 @@ export function RepoDetail() {
   }
 
   const { repo, tasks, scans, tasksByStatus, tasksByType, scansByStatus, usage } = stats;
-  const pagedTasks = paginate(tasks, tasksPage);
-  const pagedScans = paginate(scans, scansPage);
 
   const totalTasks = tasksByStatus.reduce((s: number, g: any) => s + g.count, 0);
   const totalScans = scansByStatus.reduce((s: number, g: any) => s + g.count, 0);
@@ -728,8 +751,15 @@ export function RepoDetail() {
             </Card>
           ) : (
             <>
+              <TaskViewToolbar
+                search={repoTaskSearch}
+                onSearchChange={setRepoTaskSearch}
+                viewMode={repoTaskViewMode}
+                onViewModeChange={handleRepoTaskViewModeChange}
+              />
+
               {/* Bulk Action Bar */}
-              {selectedTasks.size > 0 && (
+              {selectedTasks.size > 0 && repoTaskViewMode === "list" && (
                 <div className="flex items-center justify-between gap-3 p-3 bg-muted/50 rounded-lg border">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">{selectedTasks.size} selected</span>
@@ -743,7 +773,6 @@ export function RepoDetail() {
                     </Button>
                   </div>
                   <div className="flex items-center gap-2">
-                    {/* Start Planning - for pending/planned tasks */}
                     {(() => {
                       const plannableIds = Array.from(selectedTasks).filter((id) => {
                         const task = tasks.find((t: any) => t.id === id);
@@ -765,7 +794,6 @@ export function RepoDetail() {
                         </Button>
                       ) : null;
                     })()}
-                    {/* Retry - for failed/cancelled tasks */}
                     {(() => {
                       const retryableIds = Array.from(selectedTasks).filter((id) => {
                         const task = tasks.find((t: any) => t.id === id);
@@ -810,114 +838,135 @@ export function RepoDetail() {
                 </div>
               )}
 
-              <div className="overflow-x-auto rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-10">
-                        <Checkbox
-                          checked={selectedTasks.size === tasks.length && tasks.length > 0}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              setSelectedTasks(new Set(tasks.map((t: any) => t.id)));
-                            } else {
-                              setSelectedTasks(new Set());
-                            }
-                          }}
-                        />
-                      </TableHead>
-                      <TableHead className="w-8">Status</TableHead>
-                      <TableHead>Title</TableHead>
-                      <TableHead className="w-24">Branch</TableHead>
-                      <TableHead className="w-20">Type</TableHead>
-                      <TableHead className="w-20">Priority</TableHead>
-                      <TableHead className="w-16">Source</TableHead>
-                      <TableHead className="w-8">PR</TableHead>
-                      <TableHead className="w-20">Duration</TableHead>
-                      <TableHead className="w-20 text-right">Created</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pagedTasks.map((task: any) => {
-                      const statusCfg = STATUS_ICON[task.status] || STATUS_ICON.pending;
-                      const Icon = statusCfg.icon;
-                      const isSelected = selectedTasks.has(task.id);
-                      return (
-                        <TableRow
-                          key={task.id}
-                          className={cn("cursor-pointer", isSelected && "bg-muted/50")}
-                          onClick={() => navigate(`/tasks/${task.id}`)}
-                        >
-                          <TableCell onClick={(e) => e.stopPropagation()}>
+              {filteredRepoTasks.length === 0 ? (
+                <Card>
+                  <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                    No tasks match "{repoTaskSearch}".
+                    <button
+                      className="ml-1 text-primary underline underline-offset-2 hover:text-primary/80"
+                      onClick={() => setRepoTaskSearch("")}
+                    >
+                      Clear search
+                    </button>
+                  </CardContent>
+                </Card>
+              ) : repoTaskViewMode === "kanban" ? (
+                <TaskKanbanBoard
+                  tasks={filteredRepoTasks}
+                  onTaskClick={(task) => navigate(`/tasks/${task.id}`)}
+                />
+              ) : (
+                <>
+                  <div className="overflow-x-auto rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-10">
                             <Checkbox
-                              checked={isSelected}
+                              checked={selectedTasks.size === filteredRepoTasks.length && filteredRepoTasks.length > 0}
                               onCheckedChange={(checked) => {
-                                setSelectedTasks((prev) => {
-                                  const next = new Set(prev);
-                                  if (checked) {
-                                    next.add(task.id);
-                                  } else {
-                                    next.delete(task.id);
-                                  }
-                                  return next;
-                                });
+                                if (checked) {
+                                  setSelectedTasks(new Set(filteredRepoTasks.map((t: any) => t.id)));
+                                } else {
+                                  setSelectedTasks(new Set());
+                                }
                               }}
                             />
-                          </TableCell>
-                          <TableCell><Icon className={cn("h-4 w-4", statusCfg.className)} /></TableCell>
-                          <TableCell>
-                            <p className="text-sm font-medium truncate max-w-[300px]">{task.title}</p>
-                          </TableCell>
-                          <TableCell onClick={(e) => e.stopPropagation()}>
-                            {task.status === "pending" ? (
-                              <BranchSelect
-                                branches={branches}
-                                value={task.targetBranch}
-                                onChange={(branch) => updateTaskBranchMutation.mutate({ taskId: task.id, targetBranch: branch })}
-                                defaultBranchName={repo.defaultBranch}
-                                size="sm"
-                                className="h-6 text-xs w-28"
-                              />
-                            ) : (
-                              <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                                <GitBranch className="h-3 w-3" />
-                                <span className="truncate max-w-[80px]">{task.targetBranch || "default"}</span>
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", TYPE_COLOR[task.type])}>
-                              {task.type}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", PRIORITY_COLOR[task.priority])}>
-                              {task.priority}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-xs text-muted-foreground">{task.source === "auto_scan" ? "Auto" : "Manual"}</span>
-                          </TableCell>
-                          <TableCell onClick={(e) => e.stopPropagation()}>
-                            {task.pullRequestUrl ? (
-                              <a href={task.pullRequestUrl} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">
-                                <ExternalLink className="h-3.5 w-3.5" />
-                              </a>
-                            ) : (
-                              <span className="text-muted-foreground/40">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {formatDuration(task.createdAt, task.completedAt)}
-                          </TableCell>
-                          <TableCell className="text-right text-xs text-muted-foreground">{relativeTime(task.createdAt)}</TableCell>
+                          </TableHead>
+                          <TableHead className="w-8">Status</TableHead>
+                          <TableHead>Title</TableHead>
+                          <TableHead className="w-24">Branch</TableHead>
+                          <TableHead className="w-20">Type</TableHead>
+                          <TableHead className="w-20">Priority</TableHead>
+                          <TableHead className="w-16">Source</TableHead>
+                          <TableHead className="w-8">PR</TableHead>
+                          <TableHead className="w-20">Duration</TableHead>
+                          <TableHead className="w-20 text-right">Created</TableHead>
                         </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-              <Pagination page={tasksPage} total={tasks.length} onPageChange={setTasksPage} />
+                      </TableHeader>
+                      <TableBody>
+                        {pagedTasks.map((task: any) => {
+                          const statusCfg = STATUS_ICON[task.status] || STATUS_ICON.pending;
+                          const Icon = statusCfg.icon;
+                          const isSelected = selectedTasks.has(task.id);
+                          return (
+                            <TableRow
+                              key={task.id}
+                              className={cn("cursor-pointer", isSelected && "bg-muted/50")}
+                              onClick={() => navigate(`/tasks/${task.id}`)}
+                            >
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={isSelected}
+                                  onCheckedChange={(checked) => {
+                                    setSelectedTasks((prev) => {
+                                      const next = new Set(prev);
+                                      if (checked) {
+                                        next.add(task.id);
+                                      } else {
+                                        next.delete(task.id);
+                                      }
+                                      return next;
+                                    });
+                                  }}
+                                />
+                              </TableCell>
+                              <TableCell><Icon className={cn("h-4 w-4", statusCfg.className)} /></TableCell>
+                              <TableCell>
+                                <p className="text-sm font-medium truncate max-w-[300px]">{task.title}</p>
+                              </TableCell>
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                {task.status === "pending" ? (
+                                  <BranchSelect
+                                    branches={branches}
+                                    value={task.targetBranch}
+                                    onChange={(branch) => updateTaskBranchMutation.mutate({ taskId: task.id, targetBranch: branch })}
+                                    defaultBranchName={repo.defaultBranch}
+                                    size="sm"
+                                    className="h-6 text-xs w-28"
+                                  />
+                                ) : (
+                                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                    <GitBranch className="h-3 w-3" />
+                                    <span className="truncate max-w-[80px]">{task.targetBranch || "default"}</span>
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", TYPE_COLOR[task.type])}>
+                                  {task.type}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0", PRIORITY_COLOR[task.priority])}>
+                                  {task.priority}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <span className="text-xs text-muted-foreground">{task.source === "auto_scan" ? "Auto" : "Manual"}</span>
+                              </TableCell>
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                {task.pullRequestUrl ? (
+                                  <a href={task.pullRequestUrl} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                  </a>
+                                ) : (
+                                  <span className="text-muted-foreground/40">-</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                {formatDuration(task.createdAt, task.completedAt)}
+                              </TableCell>
+                              <TableCell className="text-right text-xs text-muted-foreground">{relativeTime(task.createdAt)}</TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <Pagination page={tasksPage} total={filteredRepoTasks.length} onPageChange={setTasksPage} />
+                </>
+              )}
             </>
           )}
         </TabsContent>
