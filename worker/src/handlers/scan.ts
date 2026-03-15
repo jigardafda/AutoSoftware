@@ -7,6 +7,7 @@ import { simpleQueryWithUsage, agentQueryWithUsage } from "../services/claude-qu
 import { detectLanguages, formatLanguageProfilePrompt, getLanguageRules, type LanguageProfile } from "../services/language-detector.js";
 import { batchAnalyzeFalsePositiveRisk, type FindingForAnalysis, type FalsePositiveAnalysis } from "../services/false-positive-detector.js";
 import { codeHealthService } from "../services/code-health.js";
+import { getMemoryContext } from "../services/memory-creator.js";
 
 interface ScanTask {
   title: string;
@@ -305,13 +306,24 @@ export async function handleRepoScan(jobs: { data: { repoId: string; projectId?:
 
     const projectContext = await getProjectContext(repoId, projectId);
 
+    // Fetch relevant project memories for scan context
+    const memoryContext = await getMemoryContext(
+      repo.userId,
+      repoId,
+      projectId,
+      { title: "Repository scan", description: "Comprehensive code review and analysis", type: "scan" }
+    ).catch((err) => {
+      console.error("Failed to fetch memory context:", err);
+      return "";
+    });
+
     await emitLog(scanResult.id, "step", "Analyzing codebase with AI agent...");
 
     // Build language-specific context for the prompt
     const languageContext = languageProfile ? formatLanguageProfilePrompt(languageProfile) : "";
     const languageRules = languageProfile ? getLanguageRules(languageProfile.primaryLanguage) : null;
 
-    const scanPrompt = `${projectContext ? projectContext + "\n---\n\n" : ""}${languageContext ? languageContext + "\n---\n\n" : ""}You are a senior software engineer performing a comprehensive code review and architectural analysis of this repository.
+    const scanPrompt = `${projectContext ? projectContext + "\n---\n\n" : ""}${memoryContext}${languageContext ? languageContext + "\n---\n\n" : ""}You are a senior software engineer performing a comprehensive code review and architectural analysis of this repository.
 
 ## ANALYSIS REQUIREMENTS
 

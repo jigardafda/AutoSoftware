@@ -190,7 +190,7 @@ export function TaskKanbanBoard({ tasks, onTaskClick }: TaskKanbanBoardProps) {
   };
 
   return (
-    <div className="flex gap-0 h-full">
+    <div className="flex items-start gap-0 h-full">
       {/* Kanban columns */}
       <div className={cn("flex-1 transition-all duration-300", selectedTask && "max-w-[calc(100%-380px)]")}>
         <ScrollArea className="w-full">
@@ -258,7 +258,7 @@ export function TaskKanbanBoard({ tasks, onTaskClick }: TaskKanbanBoardProps) {
 
       {/* Task detail / workspace chat panel */}
       {selectedTask && (
-        <div className="w-[380px] shrink-0 border-l bg-background flex flex-col animate-in slide-in-from-right-5 duration-200">
+        <div className="w-[380px] shrink-0 border-l bg-background flex flex-col animate-in slide-in-from-right-5 duration-200 sticky top-0 h-[calc(100vh-140px)]">
           <TaskDetailPanel
             task={selectedTask}
             onClose={() => setSelectedTaskId(null)}

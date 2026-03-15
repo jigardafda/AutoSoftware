@@ -446,8 +446,8 @@ export function Tasks() {
       ) : viewMode === "kanban" ? (
         <TaskKanbanBoard tasks={sorted} onTaskClick={handleRowClick} />
       ) : (
-        <div className="flex gap-0">
-          <div className={`flex-1 min-w-0 transition-all duration-300 ${selectedTask ? "max-w-[calc(100%-380px)]" : ""}`}>
+        <div className="flex items-start gap-4">
+          <div className={`flex-1 min-w-0 transition-all duration-300 ${selectedTask ? "max-w-[calc(100%-396px)]" : ""}`}>
             <TaskTable
               tasks={pagedTasks}
               selectedIds={selectedIds}
@@ -463,7 +463,7 @@ export function Tasks() {
             <Pagination page={page} total={filteredTasks.length} onPageChange={setPage} />
           </div>
           {selectedTask && (
-            <div className="w-[380px] shrink-0 border-l bg-background flex flex-col animate-in slide-in-from-right-5 duration-200 rounded-lg border h-[calc(100vh-280px)]">
+            <div className="w-[380px] shrink-0 border-l bg-background flex flex-col animate-in slide-in-from-right-5 duration-200 rounded-lg border sticky top-0 h-[calc(100vh-140px)]">
               <TaskDetailPanel
                 task={selectedTask}
                 onClose={() => setSelectedTask(null)}

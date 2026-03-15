@@ -788,14 +788,12 @@ export function AIMetricsDashboard({ dateRange }: AIMetricsDashboardProps) {
           {/* Trend Chart */}
           <TrendChart data={trends} isLoading={trendsLoading} />
 
-          {/* Charts Row */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Charts + Feedback Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <FalsePositiveChart data={falsePositives} isLoading={fpLoading} />
             <ExecutionSuccessChart data={executionSuccess} isLoading={execLoading} />
+            <RecentFeedbackList data={feedback} isLoading={feedbackLoading} />
           </div>
-
-          {/* Recent Feedback */}
-          <RecentFeedbackList data={feedback} isLoading={feedbackLoading} />
         </>
       )}
 

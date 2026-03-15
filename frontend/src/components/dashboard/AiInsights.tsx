@@ -94,7 +94,7 @@ export function AiInsights({ tasks, repos }: AiInsightsProps) {
           {displayInsights.length}
         </span>
       </div>
-      <div className="px-3 pb-3 flex-1 overflow-y-auto max-h-[320px]">
+      <div className="px-3 pb-3 flex-1 overflow-y-auto">
         {displayInsights.length === 0 ? (
           <div className="flex items-center gap-2 rounded-xl bg-emerald-500/5 border border-emerald-500/10 px-4 py-3 mt-1">
             <Sparkles size={14} className="text-emerald-500 shrink-0" />

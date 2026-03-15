@@ -1,7 +1,18 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import http from "http";
 import { URL } from "url";
+import { readFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import { DEVTOOLS_BRIDGE_SCRIPT } from "./devtools-bridge.js";
+
+// Load bippy bundle JS — must be injected in <head> BEFORE React loads
+const __dirname_proxy = dirname(fileURLToPath(import.meta.url));
+const BIPPY_BUNDLE = readFileSync(
+  join(__dirname_proxy, "bippy-bundle.js"),
+  "utf-8"
+);
+const BIPPY_SCRIPT_TAG = `<script data-autosoftware-bippy>${BIPPY_BUNDLE}</script>`;
 
 interface ProxyConfig {
   targetHost: string;
@@ -47,6 +58,14 @@ function proxyRequest(
         proxyRes.on("data", (chunk) => chunks.push(chunk));
         proxyRes.on("end", () => {
           let html = Buffer.concat(chunks).toString("utf-8");
+
+          // Inject bippy in <head> BEFORE React loads (critical for fiber detection)
+          if (/<head[^>]*>/i.test(html)) {
+            html = html.replace(/<head[^>]*>/i, "$&" + BIPPY_SCRIPT_TAG);
+          } else {
+            // No <head> tag — prepend bippy so it loads before any scripts
+            html = BIPPY_SCRIPT_TAG + html;
+          }
 
           // Inject devtools bridge before </body> or at end
           if (html.includes("</body>")) {

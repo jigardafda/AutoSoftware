@@ -30,21 +30,24 @@ interface ElementRefBadgeProps {
 
 export function ElementRefBadge({ element, onRemove }: ElementRefBadgeProps) {
   const hasSourceInfo = !!element.file;
+  const hasComponentInfo = !!element.component;
   const dims = `${Math.round(element.rect.width)}x${Math.round(element.rect.height)}`;
 
   // Short file name for badge display
   const shortFile = element.file?.split("/").pop() || null;
 
-  // Badge label: prefer "Component.tsx:31" over raw CSS selector
+  // Badge label: prefer "Component.tsx:31" > "<ComponentName/>" > raw CSS selector
   const badgeLabel = hasSourceInfo
     ? element.line
       ? `${shortFile}:${element.line}`
       : shortFile!
-    : element.tagName +
-      (element.id ? `#${element.id}` : "") +
-      (element.className
-        ? `.${element.className.split(" ").slice(0, 2).join(".")}`
-        : "");
+    : element.component
+      ? `<${element.component}/>`
+      : element.tagName +
+        (element.id ? `#${element.id}` : "") +
+        (element.className
+          ? `.${element.className.split(" ").slice(0, 2).join(".")}`
+          : "");
 
   // Stack breadcrumb: <Button/> ← <Dialog/> ← <Page/>
   const stackBreadcrumb = element.stack
@@ -57,7 +60,7 @@ export function ElementRefBadge({ element, onRemove }: ElementRefBadgeProps) {
       <Tooltip>
         <TooltipTrigger asChild>
           <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-indigo-500/10 border border-indigo-500/30 text-xs text-indigo-300 max-w-[320px]">
-            {hasSourceInfo ? (
+            {hasSourceInfo || hasComponentInfo ? (
               <FileCode className="h-3 w-3 shrink-0 text-indigo-400" />
             ) : (
               <Crosshair className="h-3 w-3 shrink-0 text-indigo-400" />
@@ -75,7 +78,7 @@ export function ElementRefBadge({ element, onRemove }: ElementRefBadgeProps) {
             </button>
           </div>
         </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-[400px]">
+        <TooltipContent side="top" className="max-w-none">
           <div className="space-y-1 text-xs">
             {element.component && (
               <div className="flex items-center gap-1.5">
@@ -99,13 +102,19 @@ export function ElementRefBadge({ element, onRemove }: ElementRefBadgeProps) {
             {stackBreadcrumb && (
               <div className="flex items-center gap-1.5">
                 <span className="text-muted-foreground">Stack:</span>
-                <span className="font-mono text-muted-foreground/80 truncate">{stackBreadcrumb}</span>
+                <span className="font-mono text-muted-foreground/80">{stackBreadcrumb}</span>
               </div>
             )}
-            {!hasSourceInfo && (
+            {!hasSourceInfo && !hasComponentInfo && (
               <div className="flex items-center gap-1.5">
                 <span className="text-muted-foreground">Selector:</span>
-                <span className="font-mono truncate">{element.selector}</span>
+                <span className="font-mono">{element.selector}</span>
+              </div>
+            )}
+            {!hasSourceInfo && hasComponentInfo && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-muted-foreground">Element:</span>
+                <span className="font-mono">{element.selector}</span>
               </div>
             )}
           </div>

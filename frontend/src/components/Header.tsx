@@ -13,6 +13,9 @@ import {
   Layers,
   FolderKanban,
   Sparkles,
+  BarChart3,
+  LayoutGrid,
+  GitPullRequestArrow,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { Logo } from "@/components/Logo";
@@ -65,9 +68,12 @@ const routeTitles: Record<string, string> = {
 
 const mobileNavItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/analytics", label: "Analytics", icon: BarChart3 },
   { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/repos", label: "Repositories", icon: GitBranch },
   { to: "/tasks", label: "Tasks", icon: CheckCircle2 },
+  { to: "/workspaces", label: "Workspaces", icon: LayoutGrid },
+  { to: "/reviews", label: "Reviews", icon: GitPullRequestArrow },
   { to: "/scans", label: "Scans", icon: Search },
   { to: "/activity", label: "Activity", icon: Activity },
   { to: "/queues", label: "Queues", icon: Layers },
@@ -115,10 +121,6 @@ export function Header() {
           <span className="sr-only">Open menu</span>
         </Button>
 
-        {/* Page title with breadcrumb style */}
-        <div className="flex items-center gap-2">
-          <h1 className="text-sm font-semibold text-foreground">{pageTitle}</h1>
-        </div>
 
         <div className="flex-1" />
 

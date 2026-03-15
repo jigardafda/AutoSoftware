@@ -11,6 +11,7 @@ import { agentQueryWithUsage } from "../services/claude-query.js";
 import { getInstalledPluginPaths } from "../services/plugin-manager.js";
 import { calculateTimeSaved } from "../services/time-estimation.js";
 import { recordTaskOutcome } from "../services/ai-metrics-recorder.js";
+import { createMemoryFromTask, getMemoryContext } from "../services/memory-creator.js";
 import {
   notifyTaskUpdate,
   emitTerminalOutput,
@@ -718,6 +719,17 @@ export async function handleTaskExecution(jobs: { data: { taskId: string } }[]) 
 
     const projectContext = await getProjectContext(repo.id, task.projectId);
 
+    // Fetch relevant project memories for this task
+    const memoryContext = await getMemoryContext(
+      repo.userId,
+      repo.id,
+      task.projectId,
+      { title: task.title, description: task.description, type: task.type, affectedFiles: task.affectedFiles as string[] }
+    ).catch((err) => {
+      console.error("Failed to fetch memory context:", err);
+      return "";
+    });
+
     // Get installed plugins for this user/project
     const pluginPaths = await getInstalledPluginPaths(repo.userId, task.projectId);
     if (pluginPaths.length > 0) {
@@ -873,7 +885,7 @@ This task involves coordinated changes across ${affectedFilesList.length || exis
 `
       : "";
 
-    let executePrompt = `${projectContext ? projectContext + "\n---\n\n" : ""}You are an expert software engineer. Implement the following task:
+    let executePrompt = `${projectContext ? projectContext + "\n---\n\n" : ""}${memoryContext}You are an expert software engineer. Implement the following task:
 
 ## Task: ${task.title}
 
@@ -1384,6 +1396,11 @@ ${multiFileContext}${multiFileModeInstructions}${baseInstructions}
       planWasAccurate: true,
       executionWasCorrect: true,
     }).catch(() => {});
+
+    // Auto-create project memory from completed task
+    createMemoryFromTask(repo.userId, taskId).catch((err) =>
+      console.error("Failed to auto-create memory:", err)
+    );
 
     // Record platform usage for analytics tracking
     await prisma.usageRecord.create({

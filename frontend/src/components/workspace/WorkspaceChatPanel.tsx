@@ -1458,6 +1458,7 @@ export function WorkspaceChatPanel({
                 !(e.type === "system" && !e.content)
             )}
             followOutput="smooth"
+            alignToBottom
             atBottomStateChange={(atBottom) =>
               setShowScrollDown(!atBottom)
             }

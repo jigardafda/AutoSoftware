@@ -6,6 +6,7 @@ import { getProjectContext } from "../services/project-context.js";
 import { resolveAuth, setupAgentSdkAuth, isValidAuth } from "../services/api-key-resolver.js";
 import { agentQueryWithUsage } from "../services/claude-query.js";
 import { getInstalledPluginPaths } from "../services/plugin-manager.js";
+import { getMemoryContext } from "../services/memory-creator.js";
 import { getBoss } from "../boss.js";
 import { JOB_NAMES } from "@autosoftware/shared";
 import {
@@ -146,6 +147,17 @@ export async function handleTaskPlanning(jobs: { data: { taskId: string } }[]) {
 
     const projectContext = await getProjectContext(repo.id, task.projectId);
 
+    // Fetch relevant project memories for this task
+    const memoryContext = await getMemoryContext(
+      repo.userId,
+      repo.id,
+      task.projectId,
+      { title: task.title, description: task.description, type: task.type, affectedFiles: task.affectedFiles as string[] }
+    ).catch((err) => {
+      console.error("Failed to fetch memory context:", err);
+      return "";
+    });
+
     // Get installed plugins for this user/project
     const pluginPaths = await getInstalledPluginPaths(repo.userId, task.projectId);
     if (pluginPaths.length > 0) {
@@ -164,7 +176,7 @@ export async function handleTaskPlanning(jobs: { data: { taskId: string } }[]) {
         taskId,
         taskTitle: task.title,
         taskDescription: task.description,
-        projectContext,
+        projectContext: projectContext ? projectContext + "\n\n" + memoryContext : memoryContext,
         repoDir,
         apiKeyId,
         onLog: (level, message, metadata) =>
@@ -261,7 +273,7 @@ ${approach.reasoning || "Selected by user"}
       }
     }
 
-    const prompt = `${projectContext ? projectContext + "\n---\n\n" : ""}${selectedApproachContext}You are an expert software engineer planning a task implementation.
+    const prompt = `${projectContext ? projectContext + "\n---\n\n" : ""}${memoryContext}${selectedApproachContext}You are an expert software engineer planning a task implementation.
 
 ## Task: ${task.title}
 

@@ -135,15 +135,25 @@ export function WorkspaceBrowser({
         let cur: Element | null = el;
         while (cur && cur.nodeType === 1) {
           let sel = cur.tagName.toLowerCase();
-          if (cur.id) { path.unshift("#" + cur.id); break; }
+          if (cur.id) {
+            path.unshift("#" + cur.id);
+            break;
+          }
           if (cur.className && typeof cur.className === "string") {
-            const cls = cur.className.trim().split(/\s+/).filter(c => !c.startsWith("__as_")).slice(0, 2);
+            const cls = cur.className
+              .trim()
+              .split(/\s+/)
+              .filter((c) => !c.startsWith("__as_"))
+              .slice(0, 2);
             if (cls.length) sel += "." + cls.join(".");
           }
           const parent = cur.parentElement;
           if (parent) {
-            const siblings = Array.from(parent.children).filter(c => c.tagName === cur!.tagName);
-            if (siblings.length > 1) sel += ":nth-of-type(" + (siblings.indexOf(cur) + 1) + ")";
+            const siblings = Array.from(parent.children).filter(
+              (c) => c.tagName === cur!.tagName,
+            );
+            if (siblings.length > 1)
+              sel += ":nth-of-type(" + (siblings.indexOf(cur) + 1) + ")";
           }
           path.unshift(sel);
           cur = parent;
@@ -152,33 +162,113 @@ export function WorkspaceBrowser({
         return path.join(" > ");
       }
 
-      // React fiber source detection
-      function getReactComponentInfo(el: Element) {
+      // React component detection — uses bippy (injected by proxy in <head>) when available,
+      // falls back to manual fiber traversal with _debugSource
+      function getReactComponentInfo(el: Element): any {
+        const ReactBippy = (win as any).ReactBippy;
+
+        // --- bippy path (preferred): uses React DevTools hook ---
+        if (
+          ReactBippy &&
+          typeof ReactBippy.isInstrumentationActive === "function" &&
+          ReactBippy.isInstrumentationActive()
+        ) {
+          const fiber = ReactBippy.getFiberFromHostInstance(el);
+          if (fiber) {
+            // Get nearest component name
+            let component: string | null = null;
+            let cur = fiber.return;
+            while (cur) {
+              if (ReactBippy.isCompositeFiber(cur)) {
+                const n = ReactBippy.getDisplayName(cur.type);
+                if (n && n.length > 1 && n.charAt(0) !== "_") {
+                  component = n;
+                  break;
+                }
+              }
+              cur = cur.return;
+            }
+            // Collect component names from fiber tree
+            const names: string[] = [];
+            ReactBippy.traverseFiber(
+              fiber,
+              (f: any) => {
+                if (names.length >= 5) return true;
+                if (ReactBippy.isCompositeFiber(f)) {
+                  const name = ReactBippy.getDisplayName(f.type);
+                  if (name && name.length > 1 && name.charAt(0) !== "_")
+                    names.push(name);
+                }
+                return false;
+              },
+              true,
+            );
+            if (!component && names.length) component = names[0];
+
+            return {
+              component,
+              file: null,
+              line: null,
+              column: null,
+              stack: names.map((n: string) => ({ name: n, file: null })),
+              framework: "react",
+              _fiber: fiber, // keep reference for async owner stack resolution on click
+            };
+          }
+        }
+
+        // --- Fallback: manual fiber traversal with _debugSource ---
         const keys = Object.keys(el);
         let fiber: any = null;
         for (const k of keys) {
-          if (k.startsWith("__reactFiber$") || k.startsWith("__reactInternalInstance$")) {
-            fiber = (el as any)[k]; break;
+          if (
+            k.startsWith("__reactFiber$") ||
+            k.startsWith("__reactInternalInstance$")
+          ) {
+            fiber = (el as any)[k];
+            break;
           }
         }
         if (!fiber) return null;
 
-        const result: any = { component: null, file: null, line: null, column: null, stack: [], framework: "react" };
+        const result: any = {
+          component: null,
+          file: null,
+          line: null,
+          column: null,
+          stack: [],
+          framework: "react",
+        };
         let current = fiber;
         let depth = 30;
         while (current && depth-- > 0) {
           const type = current.type;
-          const name = type && typeof type !== "string" ? (type.displayName || type.name || null) : null;
-          const source = current._debugSource;
-          if (source?.fileName && !/node_modules|\/chunk-|vendor/.test(source.fileName) && /\.(jsx?|tsx?|vue|svelte)$/.test(source.fileName)) {
-            const normFile = source.fileName.replace(/^(webpack:\/\/|file:\/\/\/|\.\/|rsc:\/\/)/, "").split("?")[0];
+          const name =
+            type && typeof type !== "string"
+              ? type.displayName || type.name || null
+              : null;
+          const source =
+            current._debugSource || current._debugInfo?.[0]?.source;
+          if (
+            source?.fileName &&
+            !/node_modules|\/chunk-|vendor/.test(source.fileName) &&
+            /\.(jsx?|tsx?|vue|svelte)$/.test(source.fileName)
+          ) {
+            const normFile = source.fileName
+              .replace(/^(webpack:\/\/|file:\/\/\/|\.\/|rsc:\/\/)/, "")
+              .split("?")[0];
             if (!result.file) {
               result.file = normFile;
               result.line = source.lineNumber || null;
               result.column = source.columnNumber || null;
               result.component = name || result.component;
             }
-            if (name) result.stack.push({ name, file: normFile + (source.lineNumber ? ":" + source.lineNumber : "") });
+            if (name)
+              result.stack.push({
+                name,
+                file:
+                  normFile + (source.lineNumber ? ":" + source.lineNumber : ""),
+              });
           } else if (name) {
             result.stack.push({ name, file: null });
             if (!result.component) result.component = name;
@@ -186,74 +276,141 @@ export function WorkspaceBrowser({
           current = current.return;
         }
         result.stack = result.stack.filter((s: any) => s.file).slice(0, 5);
-        return result.file ? result : null;
+        return result.file || result.component ? result : null;
       }
 
-      doc.addEventListener("mousemove", (e: MouseEvent) => {
-        if (!inspectMode) return;
-        const el = doc!.elementFromPoint(e.clientX, e.clientY);
-        if (!el || el.id?.startsWith("__as_")) return;
-        currentEl = el;
-        const rect = el.getBoundingClientRect();
-        if (!overlay) createOverlay();
-        overlay!.style.display = "block";
-        overlay!.style.left = rect.left + "px";
-        overlay!.style.top = rect.top + "px";
-        overlay!.style.width = rect.width + "px";
-        overlay!.style.height = rect.height + "px";
-
-        const dims = Math.round(rect.width) + "x" + Math.round(rect.height);
-        const ci = getReactComponentInfo(el);
-        if (ci?.file) {
-          const shortFile = ci.file.split("/").pop();
-          let label = "<" + (ci.component || "?") + "/>";
-          label += " " + shortFile + (ci.line ? ":" + ci.line : "") + " (" + dims + ")";
-          infoBox!.textContent = label;
-        } else {
-          const tag = el.tagName.toLowerCase();
-          const id = el.id ? "#" + el.id : "";
-          const cls = el.className && typeof el.className === "string" ? "." + el.className.trim().split(/\s+/).slice(0, 2).join(".") : "";
-          infoBox!.textContent = tag + id + cls + " (" + dims + ")";
+      // Resolve owner stack from bippy (async) to get source file info
+      async function resolveOwnerStack(ci: any): Promise<any> {
+        if (!ci?._fiber) return ci;
+        const ReactBippy = (win as any).ReactBippy;
+        if (!ReactBippy?.getOwnerStack) return ci;
+        try {
+          const stack = await ReactBippy.getOwnerStack(ci._fiber);
+          delete ci._fiber;
+          if (!stack) return ci;
+          const resolvedStack: Array<{ name: string; file: string | null }> =
+            [];
+          for (const frame of stack) {
+            if (frame.fileName && ReactBippy.isSourceFile(frame.fileName)) {
+              const file = ReactBippy.normalizeFileName(frame.fileName);
+              const name =
+                frame.functionName && frame.functionName.length > 1
+                  ? frame.functionName
+                  : "";
+              const fileLoc =
+                file + (frame.lineNumber ? ":" + frame.lineNumber : "");
+              if (!ci.file) {
+                ci.file = file;
+                ci.line = frame.lineNumber || null;
+                ci.column = frame.columnNumber || null;
+              }
+              resolvedStack.push({ name, file: fileLoc });
+              if (resolvedStack.length >= 5) break;
+            }
+          }
+          if (resolvedStack.length) ci.stack = resolvedStack;
+        } catch {
+          /* ignore */
         }
-        infoBox!.style.display = "block";
-        let infoTop = rect.top - 30;
-        if (infoTop < 0) infoTop = rect.bottom + 4;
-        infoBox!.style.left = Math.max(0, rect.left) + "px";
-        infoBox!.style.top = infoTop + "px";
-      }, true);
+        return ci;
+      }
 
-      doc.addEventListener("click", (e: MouseEvent) => {
-        if (!inspectMode) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const el = currentEl || doc!.elementFromPoint(e.clientX, e.clientY);
-        if (!el || el.id?.startsWith("__as_")) return;
-        const rect = el.getBoundingClientRect();
-        const ci = getReactComponentInfo(el);
-        onElementSelectedRef.current?.({
-          tagName: el.tagName.toLowerCase(),
-          id: el.id || null,
-          className: typeof el.className === "string" ? el.className : "",
-          textContent: (el.textContent || "").trim().slice(0, 200),
-          selector: getSelector(el),
-          rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-          component: ci?.component || null,
-          file: ci?.file || null,
-          line: ci?.line || null,
-          column: ci?.column || null,
-          framework: ci?.framework || null,
-          stack: ci?.stack || [],
-          htmlPreview: el.outerHTML.slice(0, 300),
-        });
-        // Exit inspect mode after selection
-        inspectMode = false;
-        setInspectActive(false);
-        if (overlay) overlay.style.display = "none";
-        if (infoBox) infoBox.style.display = "none";
-        doc!.body.style.cursor = "";
-        overlay!.style.background = "rgba(99,102,241,0.3)";
-        setTimeout(() => { if (overlay) overlay.style.background = "rgba(99,102,241,0.1)"; }, 200);
-      }, true);
+      doc.addEventListener(
+        "mousemove",
+        (e: MouseEvent) => {
+          if (!inspectMode) return;
+          const el = doc!.elementFromPoint(e.clientX, e.clientY);
+          if (!el || el.id?.startsWith("__as_")) return;
+          currentEl = el;
+          const rect = el.getBoundingClientRect();
+          if (!overlay) createOverlay();
+          overlay!.style.display = "block";
+          overlay!.style.left = rect.left + "px";
+          overlay!.style.top = rect.top + "px";
+          overlay!.style.width = rect.width + "px";
+          overlay!.style.height = rect.height + "px";
+
+          const dims = Math.round(rect.width) + "x" + Math.round(rect.height);
+          const ci = getReactComponentInfo(el);
+          if (ci?.file) {
+            const shortFile = ci.file.split("/").pop();
+            let label = "<" + (ci.component || "?") + "/>";
+            label +=
+              " " +
+              shortFile +
+              (ci.line ? ":" + ci.line : "") +
+              " (" +
+              dims +
+              ")";
+            infoBox!.textContent = label;
+          } else if (ci?.component) {
+            infoBox!.textContent = "<" + ci.component + "/> (" + dims + ")";
+          } else {
+            const tag = el.tagName.toLowerCase();
+            const id = el.id ? "#" + el.id : "";
+            const cls =
+              el.className && typeof el.className === "string"
+                ? "." + el.className.trim().split(/\s+/).slice(0, 2).join(".")
+                : "";
+            infoBox!.textContent = tag + id + cls + " (" + dims + ")";
+          }
+          infoBox!.style.display = "block";
+          let infoTop = rect.top - 30;
+          if (infoTop < 0) infoTop = rect.bottom + 4;
+          infoBox!.style.left = Math.max(0, rect.left) + "px";
+          infoBox!.style.top = infoTop + "px";
+        },
+        true,
+      );
+
+      doc.addEventListener(
+        "click",
+        (e: MouseEvent) => {
+          if (!inspectMode) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const el = currentEl || doc!.elementFromPoint(e.clientX, e.clientY);
+          if (!el || el.id?.startsWith("__as_")) return;
+          const rect = el.getBoundingClientRect();
+          const ci = getReactComponentInfo(el);
+
+          // Resolve owner stack (async for bippy source maps) then emit
+          resolveOwnerStack(ci).then((info: any) => {
+            onElementSelectedRef.current?.({
+              tagName: el.tagName.toLowerCase(),
+              id: el.id || null,
+              className: typeof el.className === "string" ? el.className : "",
+              textContent: (el.textContent || "").trim().slice(0, 200),
+              selector: getSelector(el),
+              rect: {
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
+              },
+              component: info?.component || null,
+              file: info?.file || null,
+              line: info?.line || null,
+              column: info?.column || null,
+              framework: info?.framework || null,
+              stack: info?.stack || [],
+              htmlPreview: el.outerHTML.slice(0, 300),
+            });
+          });
+
+          // Exit inspect mode after selection
+          inspectMode = false;
+          setInspectActive(false);
+          if (overlay) overlay.style.display = "none";
+          if (infoBox) infoBox.style.display = "none";
+          doc!.body.style.cursor = "";
+          overlay!.style.background = "rgba(99,102,241,0.3)";
+          setTimeout(() => {
+            if (overlay) overlay.style.background = "rgba(99,102,241,0.1)";
+          }, 200);
+        },
+        true,
+      );
 
       // Expose toggle function on iframe window for parent to call
       win.__as_toggleInspect = () => {
@@ -289,7 +446,9 @@ export function WorkspaceBrowser({
           try {
             const entryBtn = win.eruda._entryBtn;
             if (entryBtn?._$el?.[0]) entryBtn._$el[0].style.display = "none";
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
           setErudaReady(true);
           // Apply current devtools state
           if (devToolsActiveRef.current) win.eruda.show();
@@ -309,7 +468,9 @@ export function WorkspaceBrowser({
       if (!win?.eruda) return;
       if (visible) win.eruda.show();
       else win.eruda.hide();
-    } catch { /* cross-origin */ }
+    } catch {
+      /* cross-origin */
+    }
   }, []);
 
   // When a URL is detected from logs, auto-set it
@@ -362,13 +523,13 @@ export function WorkspaceBrowser({
       const portParam = port ? `${separator}__port=${port}` : "";
       return `${proxyBaseUrl}${path}${portParam}`;
     },
-    [proxyBaseUrl, isLocalUrl]
+    [proxyBaseUrl, isLocalUrl],
   );
 
   // Whether the currently loaded page goes through the proxy (and has the bridge script)
   const isProxied = useMemo(
     () => !!iframeUrl && iframeUrl.startsWith(proxyBaseUrl),
-    [iframeUrl, proxyBaseUrl]
+    [iframeUrl, proxyBaseUrl],
   );
 
   const navigateToUrl = useCallback(
@@ -385,7 +546,7 @@ export function WorkspaceBrowser({
       setHistory(newHistory);
       setHistoryIndex(newHistory.length - 1);
     },
-    [resolveIframeUrl, history, historyIndex]
+    [resolveIframeUrl, history, historyIndex],
   );
 
   const goBack = useCallback(() => {
@@ -418,7 +579,9 @@ export function WorkspaceBrowser({
     try {
       const win = iframeRef.current?.contentWindow as any;
       win?.__as_toggleInspect?.();
-    } catch { /* cross-origin */ }
+    } catch {
+      /* cross-origin */
+    }
   }, []);
 
   const toggleDevTools = useCallback(() => {
@@ -514,7 +677,10 @@ export function WorkspaceBrowser({
           </button>
         ) : isServerRunning ? (
           <button
-            onClick={async () => { await stop(); onDevServerChanged?.(); }}
+            onClick={async () => {
+              await stop();
+              onDevServerChanged?.();
+            }}
             className="shrink-0 p-1.5 rounded hover:bg-red-500/10 text-red-500 transition-colors"
             title="Stop dev server"
           >
@@ -690,12 +856,8 @@ export function WorkspaceBrowser({
           ) : isServerRunning && !iframeUrl ? (
             <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
               <Loader2 className="h-8 w-8 animate-spin" />
-              <p className="text-sm font-medium">
-                Waiting for server URL...
-              </p>
-              <p className="text-xs">
-                Scanning logs for a localhost URL
-              </p>
+              <p className="text-sm font-medium">Waiting for server URL...</p>
+              <p className="text-xs">Scanning logs for a localhost URL</p>
             </div>
           ) : failedProcess && !isServerRunning ? (
             <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
@@ -703,8 +865,7 @@ export function WorkspaceBrowser({
                 <X className="h-5 w-5 text-red-500" />
               </div>
               <p className="text-sm font-medium text-red-500">
-                Dev server failed (exit code{" "}
-                {failedProcess.exitCode ?? "?"})
+                Dev server failed (exit code {failedProcess.exitCode ?? "?"})
               </p>
               <div className="flex gap-2">
                 <button
@@ -724,9 +885,7 @@ export function WorkspaceBrowser({
           ) : !iframeUrl ? (
             <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
               <Globe className="h-10 w-10 opacity-40" />
-              <p className="text-sm">
-                Enter a URL or start the dev server
-              </p>
+              <p className="text-sm">Enter a URL or start the dev server</p>
             </div>
           ) : (
             <div
@@ -802,12 +961,11 @@ export function WorkspaceBrowser({
             </>
           )}
         </span>
-        {detectedUrl && (
-          <span className="ml-2 truncate">{detectedUrl}</span>
-        )}
+        {detectedUrl && <span className="ml-2 truncate">{detectedUrl}</span>}
         <span className="ml-auto flex items-center gap-1.5">
-          {iframeUrl && isProxied && (
-            bridgeReady ? (
+          {iframeUrl &&
+            isProxied &&
+            (bridgeReady ? (
               <>
                 <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
                 Bridge connected
@@ -817,8 +975,7 @@ export function WorkspaceBrowser({
                 <span className="h-1.5 w-1.5 rounded-full bg-yellow-500 animate-pulse" />
                 Connecting bridge...
               </>
-            )
-          )}
+            ))}
         </span>
         {inspectActive && (
           <span className="text-indigo-400 font-medium">

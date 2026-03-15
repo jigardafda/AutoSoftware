@@ -64,7 +64,6 @@ const navItems = [
 ];
 
 const bottomNavItems = [
-  { to: "/plugins", label: "Plugins", icon: Puzzle },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 

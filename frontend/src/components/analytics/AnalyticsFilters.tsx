@@ -112,7 +112,7 @@ export function AnalyticsFilters({
   };
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1.5 flex-wrap">
       {/* Inline date range pills */}
       <div className="flex items-center gap-0.5 p-0.5 bg-muted/60 rounded-lg border border-border/40">
         {presets.map(preset => (
@@ -184,8 +184,8 @@ export function AnalyticsFilters({
             )}
           >
             <FolderKanban size={12} className="text-muted-foreground" />
-            <span className="max-w-[100px] truncate">{selectedProjectName}</span>
-            <ChevronDown size={10} className="text-muted-foreground" />
+            <span className="max-w-[100px] truncate hidden sm:inline">{selectedProjectName}</span>
+            <ChevronDown size={10} className="text-muted-foreground hidden sm:block" />
           </button>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-[240px] p-0">
@@ -243,8 +243,8 @@ export function AnalyticsFilters({
             )}
           >
             <GitBranch size={12} className="text-muted-foreground" />
-            <span className="max-w-[100px] truncate">{selectedRepoName}</span>
-            <ChevronDown size={10} className="text-muted-foreground" />
+            <span className="max-w-[100px] truncate hidden sm:inline">{selectedRepoName}</span>
+            <ChevronDown size={10} className="text-muted-foreground hidden sm:block" />
           </button>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-[260px] p-0">

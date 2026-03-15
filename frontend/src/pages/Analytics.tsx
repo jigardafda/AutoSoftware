@@ -73,45 +73,45 @@ export default function Analytics() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 px-4 sm:px-6 lg:px-8 py-4">
-      {/* Filters Row */}
-      <div className="flex items-center justify-end gap-2 mb-4">
-        <AnalyticsFilters
-          dateRange={dateRange}
-          onDateRangeChange={setDateRange}
-          selectedProject={selectedProject}
-          onProjectChange={setSelectedProject}
-          selectedRepo={selectedRepo}
-          onRepoChange={setSelectedRepo}
-        />
-        <button
-          onClick={() => setShowExport(true)}
-          className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-foreground text-background rounded-lg hover:bg-foreground/90 transition-all duration-200 text-xs font-medium shadow-sm active:scale-[0.98]"
-        >
-          <Download size={13} />
-          Export
-        </button>
-      </div>
-
-      {/* Tab Navigation */}
+      {/* Tab Navigation + Filters in one row */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
-        <TabsList className="inline-flex h-9 items-center justify-center rounded-lg bg-muted/60 backdrop-blur-sm p-0.5 mb-5 border border-border/40">
-          <TabsTrigger value="metrics" className="rounded-md px-3 py-1.5 text-xs font-medium transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground">
-            <BarChart3 className="h-3.5 w-3.5 mr-1.5" />
-            Metrics & ROI
-          </TabsTrigger>
-          <TabsTrigger value="health" className="rounded-md px-3 py-1.5 text-xs font-medium transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground">
-            <Activity className="h-3.5 w-3.5 mr-1.5" />
-            Code Health
-          </TabsTrigger>
-          <TabsTrigger value="predictive" className="rounded-md px-3 py-1.5 text-xs font-medium transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground">
-            <Shield className="h-3.5 w-3.5 mr-1.5" />
-            Predictive
-          </TabsTrigger>
-          <TabsTrigger value="ai-performance" className="rounded-md px-3 py-1.5 text-xs font-medium transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground">
-            <Brain className="h-3.5 w-3.5 mr-1.5" />
-            AI Performance
-          </TabsTrigger>
-        </TabsList>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+          <TabsList className="inline-flex h-9 items-center justify-start rounded-lg bg-muted/60 backdrop-blur-sm p-0.5 border border-border/40 w-full sm:w-auto overflow-x-auto">
+            <TabsTrigger value="metrics" className="rounded-md px-2.5 sm:px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground">
+              <BarChart3 className="h-3.5 w-3.5 mr-1 sm:mr-1.5" />
+              <span className="hidden xs:inline">Metrics &</span> ROI
+            </TabsTrigger>
+            <TabsTrigger value="health" className="rounded-md px-2.5 sm:px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground">
+              <Activity className="h-3.5 w-3.5 mr-1 sm:mr-1.5" />
+              Health
+            </TabsTrigger>
+            <TabsTrigger value="predictive" className="rounded-md px-2.5 sm:px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground">
+              <Shield className="h-3.5 w-3.5 mr-1 sm:mr-1.5" />
+              Predictive
+            </TabsTrigger>
+            <TabsTrigger value="ai-performance" className="rounded-md px-2.5 sm:px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm data-[state=active]:text-foreground">
+              <Brain className="h-3.5 w-3.5 mr-1 sm:mr-1.5" />
+              AI
+            </TabsTrigger>
+          </TabsList>
+          <div className="flex items-center gap-2">
+            <AnalyticsFilters
+              dateRange={dateRange}
+              onDateRangeChange={setDateRange}
+              selectedProject={selectedProject}
+              onProjectChange={setSelectedProject}
+              selectedRepo={selectedRepo}
+              onRepoChange={setSelectedRepo}
+            />
+            <button
+              onClick={() => setShowExport(true)}
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-foreground text-background rounded-lg hover:bg-foreground/90 transition-all duration-200 text-xs font-medium shadow-sm active:scale-[0.98]"
+            >
+              <Download size={13} />
+              Export
+            </button>
+          </div>
+        </div>
 
         <TabsContent value="metrics" className="space-y-4 mt-0 animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
           <ExecutiveSummaryCards data={overview} isLoading={overviewLoading} />
