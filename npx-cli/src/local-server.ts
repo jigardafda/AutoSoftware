@@ -84,13 +84,14 @@ async function loadOrCreateConfig(dataDir: string): Promise<LocalConfig> {
 async function installBundleDeps(): Promise<void> {
   if (!IS_BUNDLED) return;
 
-  // npm strips node_modules from published packages. Check if deps need installing.
-  const backendNodeModules = path.join(PROJECT_ROOT, "backend", "node_modules");
+  // npm publish may strip or break node_modules (especially file: symlinks).
+  // Check for @autosoftware/shared specifically — it's the most fragile dependency.
+  const sharedInBackend = path.join(PROJECT_ROOT, "backend", "node_modules", "@autosoftware", "shared");
   try {
-    await access(backendNodeModules, constants.R_OK);
-    return; // Already installed
+    await access(sharedInBackend, constants.R_OK);
+    return; // Already installed correctly
   } catch {
-    // Need to install
+    // Need to install (missing or broken symlink)
   }
 
   const spinner = ora("Installing bundle dependencies (first run)...").start();
