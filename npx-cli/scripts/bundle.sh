@@ -120,19 +120,10 @@ else
 fi
 
 # ──────────────────────────────────────────────
-# 8. Install dependencies at bundle time
+# 8. Skip dependency install at bundle time
+#    installBundleDeps() in local-server.ts handles
+#    this on first run — keeps the npm tarball small.
 # ──────────────────────────────────────────────
-echo "==> Installing backend dependencies..."
-cd "$BUNDLE/backend"
-npm install --omit=dev --ignore-scripts 2>&1 | tail -1
-
-echo "==> Installing worker dependencies..."
-cd "$BUNDLE/worker"
-npm install --omit=dev --ignore-scripts 2>&1 | tail -1
-
-echo "==> Installing shared dependencies..."
-cd "$BUNDLE/packages/shared"
-npm install --omit=dev --ignore-scripts 2>&1 | tail -1
 
 # ──────────────────────────────────────────────
 # 9. Copy base tsconfig
