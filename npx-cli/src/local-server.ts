@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdir, readFile, writeFile, access, constants } from "node:fs/promises";
+import { mkdir, readFile, writeFile, access, constants, symlink } from "node:fs/promises";
 import { accessSync, constants as fsConstants } from "node:fs";
 import { execFile, fork, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
@@ -111,6 +111,19 @@ async function installBundleDeps(): Promise<void> {
     }
   }
 
+  // Create a root-level node_modules symlink so that generated/prisma/ (and any
+  // other code outside backend/worker) can resolve packages like @prisma/client.
+  const rootNodeModules = path.join(PROJECT_ROOT, "node_modules");
+  try {
+    await access(rootNodeModules, constants.R_OK);
+  } catch {
+    await symlink(
+      path.join(PROJECT_ROOT, "backend", "node_modules"),
+      rootNodeModules,
+      "dir"
+    );
+  }
+
   spinner.succeed(chalk.green("Bundle dependencies installed"));
 }
 
@@ -175,15 +188,9 @@ function startBackendProcess(
   isShuttingDownFn: () => boolean
 ): ChildProcess {
   const backendEntry = path.join(PROJECT_ROOT, "backend", "src", "index.ts");
-  // NODE_PATH ensures generated/prisma can resolve @prisma/client from backend's node_modules
-  const nodePath = [
-    path.join(PROJECT_ROOT, "backend", "node_modules"),
-    process.env.NODE_PATH,
-  ].filter(Boolean).join(path.delimiter);
-
   const child = fork(backendEntry, [], {
     cwd: path.join(PROJECT_ROOT, "backend"),
-    env: { ...process.env, ...env, NODE_PATH: nodePath },
+    env: { ...process.env, ...env },
     execArgv: ["--import", "tsx"],
     stdio: ["pipe", "pipe", "pipe", "ipc"],
   });
@@ -217,16 +224,9 @@ function startWorkerProcess(
   isShuttingDownFn: () => boolean
 ): ChildProcess {
   const workerEntry = path.join(PROJECT_ROOT, "worker", "src", "index.ts");
-
-  // NODE_PATH ensures generated/prisma can resolve @prisma/client from worker's node_modules
-  const workerNodePath = [
-    path.join(PROJECT_ROOT, "worker", "node_modules"),
-    process.env.NODE_PATH,
-  ].filter(Boolean).join(path.delimiter);
-
   const child = fork(workerEntry, [], {
     cwd: path.join(PROJECT_ROOT, "worker"),
-    env: { ...process.env, ...env, NODE_PATH: workerNodePath },
+    env: { ...process.env, ...env },
     execArgv: ["--import", "tsx"],
     stdio: ["pipe", "pipe", "pipe", "ipc"],
   });
