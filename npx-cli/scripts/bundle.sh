@@ -104,6 +104,10 @@ with open('$pkg') as f:
 deps = data.get('dependencies', {})
 if '@autosoftware/shared' in deps:
     deps['@autosoftware/shared'] = 'file:../packages/shared'
+# Add @prisma/client — it's in root package.json but needed at runtime
+# by the generated prisma client in bundle/generated/prisma/
+if '@prisma/client' not in deps:
+    deps['@prisma/client'] = '^7.4.2'
 # Remove devDependencies — not needed at runtime
 data.pop('devDependencies', None)
 with open('$pkg', 'w') as f:
