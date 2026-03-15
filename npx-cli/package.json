@@ -1,14 +1,21 @@
 {
-  "name": "auto-software",
-  "version": "0.1.0",
-  "description": "AI-powered code analysis and improvement platform - run locally with a single command",
+  "name": "@boltic/auto-software",
+  "version": "1.0.0",
+  "description": "Put your entire software team on autopilot — the 100x engineer you dreamt of",
   "keywords": [
-    "ai",
-    "code-analysis",
+    "ai-agents",
+    "autonomous-coding",
     "code-review",
+    "pull-request-automation",
     "claude",
-    "automation",
-    "developer-tools"
+    "anthropic",
+    "ai-software-engineer",
+    "devops",
+    "ci-cd",
+    "repository-management",
+    "task-automation",
+    "developer-tools",
+    "npx"
   ],
   "bin": {
     "auto-software": "./bin/cli.js"
@@ -46,7 +53,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-org/autosoftware.git",
+    "url": "https://github.com/jigardafda/AutoSoftware",
     "directory": "npx-cli"
   },
   "license": "MIT"
