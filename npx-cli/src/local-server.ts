@@ -175,9 +175,15 @@ function startBackendProcess(
   isShuttingDownFn: () => boolean
 ): ChildProcess {
   const backendEntry = path.join(PROJECT_ROOT, "backend", "src", "index.ts");
+  // NODE_PATH ensures generated/prisma can resolve @prisma/client from backend's node_modules
+  const nodePath = [
+    path.join(PROJECT_ROOT, "backend", "node_modules"),
+    process.env.NODE_PATH,
+  ].filter(Boolean).join(path.delimiter);
+
   const child = fork(backendEntry, [], {
     cwd: path.join(PROJECT_ROOT, "backend"),
-    env: { ...process.env, ...env },
+    env: { ...process.env, ...env, NODE_PATH: nodePath },
     execArgv: ["--import", "tsx"],
     stdio: ["pipe", "pipe", "pipe", "ipc"],
   });
@@ -211,9 +217,16 @@ function startWorkerProcess(
   isShuttingDownFn: () => boolean
 ): ChildProcess {
   const workerEntry = path.join(PROJECT_ROOT, "worker", "src", "index.ts");
+
+  // NODE_PATH ensures generated/prisma can resolve @prisma/client from worker's node_modules
+  const workerNodePath = [
+    path.join(PROJECT_ROOT, "worker", "node_modules"),
+    process.env.NODE_PATH,
+  ].filter(Boolean).join(path.delimiter);
+
   const child = fork(workerEntry, [], {
     cwd: path.join(PROJECT_ROOT, "worker"),
-    env: { ...process.env, ...env },
+    env: { ...process.env, ...env, NODE_PATH: workerNodePath },
     execArgv: ["--import", "tsx"],
     stdio: ["pipe", "pipe", "pipe", "ipc"],
   });
