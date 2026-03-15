@@ -81,6 +81,38 @@ async function loadOrCreateConfig(dataDir: string): Promise<LocalConfig> {
   }
 }
 
+async function installBundleDeps(): Promise<void> {
+  if (!IS_BUNDLED) return;
+
+  // npm strips node_modules from published packages. Check if deps need installing.
+  const backendNodeModules = path.join(PROJECT_ROOT, "backend", "node_modules");
+  try {
+    await access(backendNodeModules, constants.R_OK);
+    return; // Already installed
+  } catch {
+    // Need to install
+  }
+
+  const spinner = ora("Installing bundle dependencies (first run)...").start();
+
+  const dirs = ["packages/shared", "backend", "worker"];
+  for (const dir of dirs) {
+    const dirPath = path.join(PROJECT_ROOT, dir);
+    try {
+      await execFileAsync("npm", ["install", "--omit=dev", "--ignore-scripts"], {
+        cwd: dirPath,
+        env: { ...process.env },
+        timeout: 120_000,
+      });
+    } catch (err: unknown) {
+      spinner.fail(chalk.red(`Failed to install dependencies in ${dir}`));
+      throw err;
+    }
+  }
+
+  spinner.succeed(chalk.green("Bundle dependencies installed"));
+}
+
 async function runPrismaMigrations(databaseUrl: string): Promise<void> {
   const spinner = ora("Running database migrations...").start();
 
@@ -483,7 +515,10 @@ export async function startLocalServer(options: LocalServerOptions): Promise<voi
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 
   try {
-    // 3. Run Prisma migrations (skip generate when bundled — client is pre-built)
+    // 3. Install bundle dependencies if needed (npm strips node_modules on publish)
+    await installBundleDeps();
+
+    // 4. Run Prisma migrations (skip generate when bundled — client is pre-built)
     if (!IS_BUNDLED) {
       await generatePrismaClient(databaseUrl);
     }
