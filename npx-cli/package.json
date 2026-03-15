@@ -29,6 +29,7 @@
     "prepack": "npm run bundle"
   },
   "files": [
+    "README.md",
     "bin/cli.js",
     "bundle/**"
   ],
