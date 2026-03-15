@@ -47,6 +47,7 @@ import {
 
 const routeTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
+  "/analytics": "Analytics",
   "/projects": "Projects",
   "/repos": "Repositories",
   "/tasks": "Tasks",
@@ -55,6 +56,11 @@ const routeTitles: Record<string, string> = {
   "/queues": "Queues",
   "/notifications": "Notifications",
   "/settings": "Settings",
+  "/workspaces": "Workspaces",
+  "/reviews": "Reviews",
+  "/triggers": "Triggers",
+  "/team": "Team",
+  "/plugins": "Plugins",
 };
 
 const mobileNavItems = [

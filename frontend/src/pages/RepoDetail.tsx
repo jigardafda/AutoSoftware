@@ -25,6 +25,9 @@ import {
   X,
   BrainCircuit,
   Settings2,
+  Terminal,
+  Save,
+  Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FileBrowser } from "@/components/repos/FileBrowser";
@@ -77,6 +80,7 @@ import {
   Legend,
 } from "recharts";
 import { ProjectMemoryPanel } from "@/components/memory";
+import { AgentSelector } from "@/components/workspace/AgentSelector";
 
 function relativeTime(dateStr: string | null): string {
   if (!dateStr) return "Never";
@@ -201,9 +205,16 @@ export function RepoDetail() {
     localStorage.setItem("repo-tasks-view-mode", mode);
   }, []);
 
+  // Dev server script
+  const [devScriptEditing, setDevScriptEditing] = useState(false);
+  const [devScriptValue, setDevScriptValue] = useState("");
+  const [devScriptTestLogs, setDevScriptTestLogs] = useState<string | null>(null);
+  const [devScriptTestStatus, setDevScriptTestStatus] = useState<"running" | "success" | "error" | null>(null);
+
   // Dialog states
   const [scanDialogOpen, setScanDialogOpen] = useState(false);
   const [scanDialogBranch, setScanDialogBranch] = useState<string | null>(null);
+  const [scanDialogAgent, setScanDialogAgent] = useState<string>("");
   const [defaultBranchDialogOpen, setDefaultBranchDialogOpen] = useState(false);
   const [newDefaultBranch, setNewDefaultBranch] = useState<string | null>(null);
 
@@ -233,6 +244,13 @@ export function RepoDetail() {
     queryFn: () => api.repos.branches(id!),
     enabled: !!id,
     staleTime: 30_000,
+  });
+
+  // Fetch user settings for default agent
+  const { data: userSettings } = useQuery({
+    queryKey: ["settings"],
+    queryFn: () => api.settings.get(),
+    staleTime: 60_000,
   });
 
   const scanMutation = useMutation({
@@ -418,6 +436,7 @@ export function RepoDetail() {
             size="sm"
             onClick={() => {
               setScanDialogBranch(repo.defaultBranch);
+              setScanDialogAgent(userSettings?.defaultAgent || "claude-code");
               setScanDialogOpen(true);
             }}
             disabled={scanMutation.isPending || repo.status === "scanning"}
@@ -451,21 +470,27 @@ export function RepoDetail() {
           <DialogHeader>
             <DialogTitle>Scan Repository</DialogTitle>
             <DialogDescription>
-              Select which branch to scan for improvements and issues.
+              Select the branch and agent to use for scanning.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <label className="text-sm font-medium mb-2 block">Branch to scan</label>
-            <BranchSelect
-              branches={branches}
-              value={scanDialogBranch}
-              onChange={setScanDialogBranch}
-              defaultBranchName={repo.defaultBranch}
-              className="w-full"
-            />
-            <p className="text-xs text-muted-foreground mt-2">
-              Tasks created from this scan will target the selected branch.
-            </p>
+          <div className="space-y-4 py-4">
+            <div>
+              <label className="text-sm font-medium mb-2 block">Branch to scan</label>
+              <BranchSelect
+                branches={branches}
+                value={scanDialogBranch}
+                onChange={setScanDialogBranch}
+                defaultBranchName={repo.defaultBranch}
+                className="w-full"
+              />
+              <p className="text-xs text-muted-foreground mt-2">
+                Tasks created from this scan will target the selected branch.
+              </p>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-2 block">Agent</label>
+              <AgentSelector value={scanDialogAgent} onChange={setScanDialogAgent} />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setScanDialogOpen(false)}>
@@ -644,38 +669,199 @@ export function RepoDetail() {
             </Card>
           </div>
 
-          {/* Recent Activity */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Recent Scans</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {scans.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4 text-center">No scans yet</p>
-              ) : (
-                <div className="space-y-2">
-                  {scans.slice(0, 5).map((scan: any) => (
-                    <div key={scan.id} className="flex items-center gap-3 text-sm">
-                      {scan.status === "queued" ? (
-                        <Clock className="h-4 w-4 text-amber-500 shrink-0" />
-                      ) : scan.status === "in_progress" ? (
-                        <Loader2 className="h-4 w-4 text-blue-500 shrink-0 animate-spin" />
-                      ) : scan.status === "completed" ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
-                      ) : scan.status === "cancelled" ? (
-                        <Ban className="h-4 w-4 text-gray-500 shrink-0" />
-                      ) : (
-                        <XCircle className="h-4 w-4 text-red-500 shrink-0" />
-                      )}
-                      <span className="truncate flex-1">{scan.summary || (scan.status === "queued" ? "Waiting to start" : scan.status === "in_progress" ? "Scanning..." : "No summary")}</span>
-                      <span className="text-xs text-muted-foreground shrink-0">{relativeTime(scan.scannedAt)}</span>
-                      <Badge variant="secondary" className="text-[10px] shrink-0">{scan.tasksCreated} tasks</Badge>
-                    </div>
-                  ))}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Recent Activity */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Recent Scans</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {scans.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center">No scans yet</p>
+                ) : (
+                  <div className="space-y-2">
+                    {scans.slice(0, 5).map((scan: any) => (
+                      <div key={scan.id} className="flex items-center gap-3 text-sm">
+                        {scan.status === "queued" ? (
+                          <Clock className="h-4 w-4 text-amber-500 shrink-0" />
+                        ) : scan.status === "in_progress" ? (
+                          <Loader2 className="h-4 w-4 text-blue-500 shrink-0 animate-spin" />
+                        ) : scan.status === "completed" ? (
+                          <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                        ) : scan.status === "cancelled" ? (
+                          <Ban className="h-4 w-4 text-gray-500 shrink-0" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                        )}
+                        <span className="truncate flex-1">{scan.summary || (scan.status === "queued" ? "Waiting to start" : scan.status === "in_progress" ? "Scanning..." : "No summary")}</span>
+                        <span className="text-xs text-muted-foreground shrink-0">{relativeTime(scan.scannedAt)}</span>
+                        <Badge variant="secondary" className="text-[10px] shrink-0">{scan.tasksCreated} tasks</Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Dev Server Script */}
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Terminal className="h-4 w-4" />
+                    Dev Server Script
+                  </CardTitle>
+                  {!devScriptEditing && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setDevScriptValue(repo.devServerScript || "");
+                        setDevScriptEditing(true);
+                      }}
+                    >
+                      <Pencil className="h-3 w-3 mr-1" />
+                      {repo.devServerScript ? "Edit" : "Configure"}
+                    </Button>
+                  )}
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </CardHeader>
+              <CardContent>
+                {devScriptEditing ? (
+                  <div className="space-y-3">
+                    <textarea
+                      value={devScriptValue}
+                      onChange={(e) => setDevScriptValue(e.target.value)}
+                      placeholder="e.g. cd frontend && npm run dev"
+                      className="w-full h-20 px-3 py-2 rounded-md border bg-muted/30 font-mono text-sm resize-none outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50"
+                      spellCheck={false}
+                      autoFocus
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Runs in workspace worktrees to start the dev server for browser preview.
+                    </p>
+                    {devScriptTestLogs !== null && (
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-medium text-muted-foreground">Execution Log</span>
+                          {devScriptTestStatus === "running" && (
+                            <span className="flex items-center gap-1 text-xs text-blue-500">
+                              <Loader2 className="h-3 w-3 animate-spin" /> Running
+                            </span>
+                          )}
+                          {devScriptTestStatus === "success" && (
+                            <span className="flex items-center gap-1 text-xs text-green-500">
+                              <CheckCircle2 className="h-3 w-3" /> Started
+                            </span>
+                          )}
+                          {devScriptTestStatus === "error" && (
+                            <span className="flex items-center gap-1 text-xs text-red-500">
+                              <XCircle className="h-3 w-3" /> Failed
+                            </span>
+                          )}
+                        </div>
+                        <div className="h-32 rounded-md border bg-[#0d1117] overflow-auto font-mono text-xs p-2 text-[#c9d1d9] whitespace-pre-wrap">
+                          {devScriptTestLogs || "Waiting for output..."}
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 justify-end">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setDevScriptEditing(false);
+                          setDevScriptTestLogs(null);
+                          setDevScriptTestStatus(null);
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!devScriptValue.trim() || devScriptTestStatus === "running"}
+                        onClick={async () => {
+                          // Save first, then test via backend
+                          const script = devScriptValue.trim();
+                          if (!script) return;
+                          try {
+                            await api.repos.update(id!, { devServerScript: script });
+                            queryClient.invalidateQueries({ queryKey: ["repo-stats", id] });
+                          } catch {
+                            toast.error("Failed to save script");
+                            return;
+                          }
+                          setDevScriptTestLogs("");
+                          setDevScriptTestStatus("running");
+                          try {
+                            const res = await fetch(`/api/repos/${id}/test-script`, {
+                              method: "POST",
+                              credentials: "include",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ script }),
+                            });
+                            if (!res.ok) {
+                              const err = await res.json().catch(() => ({}));
+                              setDevScriptTestLogs(err.error || "Failed to run script");
+                              setDevScriptTestStatus("error");
+                              return;
+                            }
+                            // Stream output from response
+                            const reader = res.body?.getReader();
+                            const decoder = new TextDecoder();
+                            if (reader) {
+                              let done = false;
+                              while (!done) {
+                                const { value, done: readerDone } = await reader.read();
+                                done = readerDone;
+                                if (value) {
+                                  setDevScriptTestLogs((prev) => (prev || "") + decoder.decode(value, { stream: true }));
+                                }
+                              }
+                            }
+                            setDevScriptTestStatus("success");
+                          } catch (err: any) {
+                            setDevScriptTestLogs((prev) => (prev || "") + "\n" + (err.message || "Connection error"));
+                            setDevScriptTestStatus("error");
+                          }
+                        }}
+                      >
+                        <Play className="h-3 w-3 mr-1" />
+                        Save & Test
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await api.repos.update(id!, { devServerScript: devScriptValue.trim() || null });
+                            queryClient.invalidateQueries({ queryKey: ["repo-stats", id] });
+                            toast.success("Dev server script saved");
+                            setDevScriptEditing(false);
+                            setDevScriptTestLogs(null);
+                            setDevScriptTestStatus(null);
+                          } catch {
+                            toast.error("Failed to save dev server script");
+                          }
+                        }}
+                      >
+                        <Save className="h-3 w-3 mr-1" />
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+                ) : repo.devServerScript ? (
+                  <pre className="text-sm font-mono bg-muted/30 rounded-md px-3 py-2 whitespace-pre-wrap break-all">
+                    {repo.devServerScript}
+                  </pre>
+                ) : (
+                  <p className="text-sm text-muted-foreground py-2 text-center">
+                    No dev server script configured. Set one to enable browser preview in workspaces.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         {/* Analysis Tab */}

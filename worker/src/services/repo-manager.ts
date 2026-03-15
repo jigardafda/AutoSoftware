@@ -53,15 +53,26 @@ export async function createWorktree(
   }
 
   if (baseBranch) {
-    // Fetch the target branch to ensure we have the latest
+    // Check if this repo has an 'origin' remote (local repos may not)
+    let hasOrigin = false;
     try {
-      await git.fetch("origin", baseBranch);
-    } catch (err) {
-      console.warn(`Failed to fetch branch ${baseBranch}, will try to use existing ref:`, err);
-    }
+      const remotes = await git.getRemotes();
+      hasOrigin = remotes.some((r) => r.name === "origin");
+    } catch {}
 
-    // Create worktree with new branch based on the target branch
-    await git.raw(["worktree", "add", "-b", branchName, worktreeDir, `origin/${baseBranch}`]);
+    if (hasOrigin) {
+      // Fetch the target branch to ensure we have the latest
+      try {
+        await git.fetch("origin", baseBranch);
+      } catch (err) {
+        console.warn(`Failed to fetch branch ${baseBranch}, will try to use existing ref:`, err);
+      }
+      // Create worktree with new branch based on the remote branch
+      await git.raw(["worktree", "add", "-b", branchName, worktreeDir, `origin/${baseBranch}`]);
+    } else {
+      // Local repo — create worktree from local branch directly
+      await git.raw(["worktree", "add", "-b", branchName, worktreeDir, baseBranch]);
+    }
   } else {
     // Create worktree with new branch from HEAD (existing behavior)
     await git.raw(["worktree", "add", "-b", branchName, worktreeDir]);

@@ -47,7 +47,7 @@ export const config = {
   },
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
   apiKeyEncryptionSecret: requireEnv("API_KEY_ENCRYPTION_SECRET"),
-  workDir: process.env.WORK_DIR || "/tmp/autosoftware-workspaces",
+  workDir: process.env.WORK_DIR || `${process.env.HOME}/.auto-software/workspaces`,
   // Web Push VAPID keys (optional - generate with web-push generate-vapid-keys)
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY || "",
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || "",

@@ -363,9 +363,22 @@ body {
 
 /* ===== Focus States ===== */
 
+/* Only apply focus ring to non-form interactive elements (buttons, links, etc.) */
 *:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
+}
+
+/* Remove focus ring from ALL form inputs — they use their own ring/border styles */
+input:focus-visible,
+input:focus,
+textarea:focus-visible,
+textarea:focus,
+select:focus-visible,
+select:focus,
+[role="combobox"]:focus-visible,
+[cmdk-input]:focus-visible {
+  outline: none !important;
 }
 
 /* ===== Selection ===== */

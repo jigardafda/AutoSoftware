@@ -9,8 +9,17 @@
  * - Artifact extraction and management
  * - Voice input metadata tracking
  * - OAuth token support (Claude Max subscription)
+ *
+ * TODO: Migrate to ACP (Agent Client Protocol) once a standalone MCP server
+ * is implemented. The chat service requires in-process MCP tools (list_repositories,
+ * create_task, etc.) which the Claude Agent SDK provides via createSdkMcpServer.
+ * ACP's newSession() supports external MCP servers via stdio/http, so the migration
+ * path is: (1) extract MCP tools into a standalone server, (2) replace this
+ * query()+createSdkMcpServer usage with acpQuery()+mcpServers in newSession.
  */
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore -- Claude Agent SDK still needed for chat MCP tools until standalone MCP server is built
 import { query, tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod/v4";
 import { prisma } from "../db.js";

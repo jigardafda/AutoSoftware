@@ -20,6 +20,7 @@ export function FileViewer({ repoId, filePath, highlightLine, branch }: FileView
     queryKey: ["repo-file", repoId, filePath, branch],
     queryFn: () => api.repos.file(repoId, filePath!, branch || undefined),
     enabled: !!filePath,
+    staleTime: 60_000,
   });
 
   if (!filePath) {

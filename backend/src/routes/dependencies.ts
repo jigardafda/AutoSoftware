@@ -72,14 +72,15 @@ export const dependencyRoutes: FastifyPluginAsync = async (app) => {
     try {
       // Find manifest files in the repository
       const manifests: Array<{ path: string; content: string }> = [];
+      const rootOverride = repo.provider === "local" ? repo.cloneUrl : undefined;
 
       // List root directory and look for manifest files
-      const rootEntries = await listDirectory(repo.id, "");
+      const rootEntries = await listDirectory(repo.id, "", rootOverride);
 
       for (const entry of rootEntries) {
         if (entry.type === "file" && MANIFEST_FILES.includes(entry.name)) {
           try {
-            const fileResult = await readFile(repo.id, entry.name);
+            const fileResult = await readFile(repo.id, entry.name, rootOverride);
             manifests.push({
               path: entry.name,
               content: fileResult.content || "",
@@ -94,13 +95,14 @@ export const dependencyRoutes: FastifyPluginAsync = async (app) => {
       const subDirs = ["packages", "apps", "libs"];
       for (const subDir of subDirs) {
         try {
-          const subEntries = await listDirectory(repo.id, subDir);
+          const subEntries = await listDirectory(repo.id, subDir, rootOverride);
           for (const subEntry of subEntries) {
             if (subEntry.type === "directory") {
               try {
                 const pkgEntries = await listDirectory(
                   repo.id,
-                  `${subDir}/${subEntry.name}`
+                  `${subDir}/${subEntry.name}`,
+                  rootOverride
                 );
                 for (const pkgEntry of pkgEntries) {
                   if (
@@ -108,7 +110,7 @@ export const dependencyRoutes: FastifyPluginAsync = async (app) => {
                     MANIFEST_FILES.includes(pkgEntry.name)
                   ) {
                     const path = `${subDir}/${subEntry.name}/${pkgEntry.name}`;
-                    const fileResult = await readFile(repo.id, path);
+                    const fileResult = await readFile(repo.id, path, rootOverride);
                     manifests.push({
                       path,
                       content: fileResult.content || "",

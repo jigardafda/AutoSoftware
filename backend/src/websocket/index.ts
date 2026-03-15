@@ -6,6 +6,7 @@ import { initEventListener } from './event-emitter.js';
 import { getBufferedOutput } from './terminal-stream.js';
 import { Pool } from 'pg';
 import { prisma } from '../db.js';
+import { registerWorkspaceStream } from './workspace-stream.js';
 
 interface WebSocketMessage {
   type: string;
@@ -156,6 +157,9 @@ export async function registerWebSocket(
       connectionManager.removeConnection(connectionId);
     });
   });
+
+  // Register workspace streaming WebSocket endpoint
+  registerWorkspaceStream(fastify);
 }
 
 function handleMessage(

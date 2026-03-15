@@ -1488,4 +1488,69 @@ export const taskRoutes: FastifyPluginAsync = async (app) => {
       });
     }
   });
+
+  // Create or find a workspace for a task
+  app.post<{ Params: { id: string } }>("/:id/workspace", async (request, reply) => {
+    const task = await prisma.task.findFirst({
+      where: { id: request.params.id, userId: request.userId },
+    });
+    if (!task) return reply.code(404).send({ error: { message: "Task not found" } });
+
+    // Check if a workspace already exists for this task
+    const existing = await prisma.workspace.findFirst({
+      where: { taskId: task.id, userId: request.userId },
+    });
+    if (existing) {
+      return { workspace: existing, created: false };
+    }
+
+    // Look up user's preferred model for this agent
+    const user = await prisma.user.findUnique({ where: { id: request.userId }, select: { settings: true } });
+    const userSettings = (user?.settings as any) || {};
+    const taskAgentId = (request.body as any)?.agentId || 'claude-code';
+    const agentModel = userSettings.agentModels?.[taskAgentId] || undefined;
+
+    // Create a new workspace linked to this task
+    const { workspaceManager } = await import('../services/workspace/workspace-manager.js');
+    try {
+      const workspace = await workspaceManager.create({
+        userId: request.userId,
+        name: task.title,
+        description: task.description.slice(0, 500),
+        repositoryId: task.repositoryId,
+        taskId: task.id,
+        projectId: task.projectId || undefined,
+        agentId: taskAgentId,
+        agentModel,
+        baseBranch: task.targetBranch || undefined,
+      });
+
+      // If workspace has no worktreePath, try cloning from GitHub as fallback
+      if (!workspace.worktreePath && task.repositoryId) {
+        const repo = await prisma.repository.findUnique({ where: { id: task.repositoryId } });
+        if (repo && repo.provider !== 'local' && repo.fullName) {
+          const [owner, repoName] = repo.fullName.split('/');
+          if (owner && repoName) {
+            try {
+              await workspaceManager.setupWorktreeFromGitHub(
+                workspace.id,
+                owner,
+                repoName,
+                task.targetBranch || repo.defaultBranch || undefined,
+              );
+              const updated = await prisma.workspace.findUnique({ where: { id: workspace.id } });
+              return { workspace: updated ?? workspace, created: true };
+            } catch (ghErr) {
+              console.warn(`[tasks] GitHub clone fallback failed for ${repo.fullName}:`, ghErr);
+            }
+          }
+        }
+      }
+
+      return { workspace, created: true };
+    } catch (err: any) {
+      console.error(`[tasks] Failed to create workspace for task ${task.id}:`, err.message);
+      return reply.code(500).send({ error: { message: `Failed to create workspace: ${err.message}` } });
+    }
+  });
 };

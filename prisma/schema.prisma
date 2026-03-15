@@ -11,6 +11,7 @@ enum OAuthProvider {
   github
   gitlab
   bitbucket
+  local
 }
 
 enum RepoStatus {
@@ -162,6 +163,12 @@ model User {
 
   // Spatial Canvas
   canvasStates CanvasState[]
+
+  // Workspaces
+  workspaces         Workspace[]
+
+  // PR Reviews
+  prReviews PrReview[]
 }
 
 model Account {
@@ -210,6 +217,9 @@ model Repository {
   webhookConfigs       WebhookConfig[]
   proactiveSuggestions ProactiveSuggestion[]
   projectMemories      ProjectMemory[]
+  localPath      String?   // For locally-added folders (local mode)
+  devServerScript String?  // Bash command to start dev server (e.g. "npm run dev")
+  prReviews            PrReview[]
 
   @@unique([provider, providerRepoId])
 }
@@ -2149,4 +2159,104 @@ model PromptRefinement {
 
   @@index([category, appliedAt])
   @@index([failureCount])
+}
+
+// ============================================================================
+// Workspaces - Interactive AI Execution Environments
+// ============================================================================
+
+enum WorkspaceStatus {
+  creating
+  active
+  paused
+  completed
+  error
+}
+
+model Workspace {
+  id             String          @id @default(cuid())
+  userId         String
+  taskId         String?
+  repositoryId   String?
+  projectId      String?
+  prReviewId     String?
+  name           String
+  description    String          @default("")
+  status         WorkspaceStatus @default(creating)
+  agentId        String          @default("claude-code")
+  agentModel     String?
+  worktreePath   String?
+  worktreeBranch String?
+  localPath      String?
+  devServerScript String?
+  settings       Json            @default("{}")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  completedAt    DateTime?
+
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prReview   PrReview?          @relation(fields: [prReviewId], references: [id], onDelete: SetNull)
+  sessions   WorkspaceSession[]
+
+  @@index([userId, status])
+}
+
+model WorkspaceSession {
+  id               String    @id @default(cuid())
+  workspaceId      String
+  agentPid         Int?
+  claudeSessionId  String?   // Claude Code --session-id / --resume ID for multi-turn
+  status           String    @default("active")
+  startedAt        DateTime  @default(now())
+  endedAt          DateTime?
+
+  workspace Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  messages  WorkspaceMessage[]
+
+  @@index([workspaceId])
+}
+
+model WorkspaceMessage {
+  id        String   @id @default(cuid())
+  sessionId String
+  role      String
+  content   String   @db.Text
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  session WorkspaceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+}
+
+// ============================================================================
+// PR Reviews - Code Review by AI Agents
+// ============================================================================
+
+model PrReview {
+  id          String   @id @default(cuid())
+  prUrl       String
+  provider    String   // "github" | "gitlab" | "bitbucket"
+  owner       String
+  repo        String
+  prNumber    Int
+  title       String
+  description String   @default("")
+  agentId     String
+  status      String   @default("pending") // "pending" | "running" | "completed" | "failed"
+  summary     String?  @db.Text
+  verdict     String?  // "approve" | "request_changes" | "comment"
+  comments    Json?    // Array of { file, line, severity, comment }
+  filesChanged Json?   // Array of file paths
+  baseBranch  String   @default("main")
+  headBranch  String   @default("")
+  error       String?
+  userId      String?
+  repoId      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User?    @relation(fields: [userId], references: [id])
+  repository  Repository? @relation(fields: [repoId], references: [id])
+  workspaces  Workspace[]
 }

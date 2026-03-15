@@ -5,7 +5,8 @@
     "packages/*",
     "backend",
     "worker",
-    "frontend"
+    "frontend",
+    "npx-cli"
   ],
   "scripts": {
     "dev": "concurrently -n backend,worker,frontend -c blue,magenta,green \"npm run dev:backend\" \"npm run dev:worker\" \"npm run dev:frontend\"",

@@ -1,5 +1,4 @@
 import { Trophy, Clock, Code, ChevronRight } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
@@ -19,140 +18,86 @@ interface ContributorsLeaderboardProps {
   onUserClick: (userId: string) => void;
 }
 
-function getRankBadge(rank: number) {
-  switch (rank) {
-    case 1:
-      return {
-        color: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
-        icon: Trophy,
-      };
-    case 2:
-      return {
-        color: 'bg-slate-400/10 text-slate-400 border-slate-400/20',
-        icon: Trophy,
-      };
-    case 3:
-      return {
-        color: 'bg-amber-600/10 text-amber-600 border-amber-600/20',
-        icon: Trophy,
-      };
-    default:
-      return null;
-  }
-}
+const rankStyles: Record<number, { bg: string; text: string; ring: string }> = {
+  1: { bg: 'bg-amber-400/15', text: 'text-amber-500', ring: 'ring-amber-400/30' },
+  2: { bg: 'bg-slate-300/15', text: 'text-slate-400', ring: 'ring-slate-300/30' },
+  3: { bg: 'bg-orange-400/15', text: 'text-orange-500', ring: 'ring-orange-400/30' },
+};
 
 function getInitials(name: string): string {
-  return name
-    .split(' ')
-    .map(n => n[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 }
 
 export function ContributorsLeaderboard({ contributors, onUserClick }: ContributorsLeaderboardProps) {
-  if (contributors.length === 0) {
-    return (
-      <Card>
-        <CardHeader className="p-4 pb-0">
-          <CardTitle className="text-sm">Top Contributors</CardTitle>
-        </CardHeader>
-        <CardContent className="p-4 pt-4">
+  return (
+    <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden">
+      <div className="flex items-center justify-between px-6 pt-5 pb-3">
+        <h3 className="text-sm font-semibold">Top Contributors</h3>
+        <div className="flex items-center gap-4 text-[11px] text-muted-foreground font-medium">
+          <span className="flex items-center gap-1"><Code size={11} /> Lines</span>
+          <span className="flex items-center gap-1"><Clock size={11} /> Hours</span>
+        </div>
+      </div>
+      <div className="px-3 pb-3">
+        {contributors.length === 0 ? (
           <div className="flex h-[300px] items-center justify-center">
             <p className="text-sm text-muted-foreground">No contributor data available</p>
           </div>
-        </CardContent>
-      </Card>
-    );
-  }
+        ) : (
+          <ScrollArea className="h-[340px]">
+            <div className="space-y-0.5">
+              {contributors.map((c) => {
+                const style = rankStyles[c.rank];
+                return (
+                  <button
+                    key={c.userId}
+                    onClick={() => onUserClick(c.userId)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-muted/50 text-left group"
+                  >
+                    {/* Rank */}
+                    <div className="w-8 flex items-center justify-center shrink-0">
+                      {style ? (
+                        <div className={cn("h-7 w-7 rounded-full flex items-center justify-center ring-1", style.bg, style.text, style.ring)}>
+                          <Trophy size={13} />
+                        </div>
+                      ) : (
+                        <span className="text-sm font-semibold text-muted-foreground tabular-nums">{c.rank}</span>
+                      )}
+                    </div>
 
-  return (
-    <Card>
-      <CardHeader className="p-4 pb-0">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm">Top Contributors</CardTitle>
-          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Code size={12} />
-              Lines
-            </span>
-            <span className="flex items-center gap-1">
-              <Clock size={12} />
-              Hours
-            </span>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="p-4 pt-2">
-        <ScrollArea className="h-[320px]">
-          <div className="space-y-1">
-            {contributors.map((contributor) => {
-              const rankBadge = getRankBadge(contributor.rank);
+                    {/* Avatar */}
+                    <Avatar className="h-9 w-9 shrink-0 ring-2 ring-background">
+                      {c.userAvatar && <AvatarImage src={c.userAvatar} alt={c.userName} />}
+                      <AvatarFallback className="text-xs font-semibold bg-gradient-to-br from-primary/20 to-primary/10 text-primary">
+                        {getInitials(c.userName)}
+                      </AvatarFallback>
+                    </Avatar>
 
-              return (
-                <button
-                  key={contributor.userId}
-                  onClick={() => onUserClick(contributor.userId)}
-                  className={cn(
-                    "w-full flex items-center gap-3 p-3 rounded-lg transition-colors",
-                    "hover:bg-muted/50 text-left group"
-                  )}
-                >
-                  {/* Rank */}
-                  <div className="w-8 flex items-center justify-center shrink-0">
-                    {rankBadge ? (
-                      <div className={cn(
-                        "h-7 w-7 rounded-full flex items-center justify-center border",
-                        rankBadge.color
-                      )}>
-                        <rankBadge.icon size={14} />
+                    {/* Name */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{c.userName}</p>
+                      <p className="text-[11px] text-muted-foreground">{c.taskCount} tasks</p>
+                    </div>
+
+                    {/* Stats */}
+                    <div className="flex items-center gap-4 text-right shrink-0">
+                      <div>
+                        <p className="text-sm font-semibold tabular-nums">{c.linesChanged.toLocaleString()}</p>
+                        <p className="text-[10px] text-muted-foreground">lines</p>
                       </div>
-                    ) : (
-                      <span className="text-sm font-medium text-muted-foreground">
-                        {contributor.rank}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Avatar */}
-                  <Avatar className="h-9 w-9 shrink-0">
-                    {contributor.userAvatar && (
-                      <AvatarImage src={contributor.userAvatar} alt={contributor.userName} />
-                    )}
-                    <AvatarFallback className="text-xs font-medium bg-primary/10 text-primary">
-                      {getInitials(contributor.userName)}
-                    </AvatarFallback>
-                  </Avatar>
-
-                  {/* Name and Tasks */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{contributor.userName}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {contributor.taskCount} tasks completed
-                    </p>
-                  </div>
-
-                  {/* Stats */}
-                  <div className="flex items-center gap-4 text-right shrink-0">
-                    <div>
-                      <p className="text-sm font-medium">{contributor.linesChanged.toLocaleString()}</p>
-                      <p className="text-xs text-muted-foreground">lines</p>
+                      <div>
+                        <p className="text-sm font-semibold tabular-nums">{c.hoursSaved.toFixed(1)}</p>
+                        <p className="text-[10px] text-muted-foreground">hrs</p>
+                      </div>
+                      <ChevronRight size={14} className="text-muted-foreground/40 group-hover:text-muted-foreground transition-all group-hover:translate-x-0.5" />
                     </div>
-                    <div>
-                      <p className="text-sm font-medium">{contributor.hoursSaved.toFixed(1)}</p>
-                      <p className="text-xs text-muted-foreground">hrs</p>
-                    </div>
-                    <ChevronRight
-                      size={16}
-                      className="text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
-                    />
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </ScrollArea>
-      </CardContent>
-    </Card>
+                  </button>
+                );
+              })}
+            </div>
+          </ScrollArea>
+        )}
+      </div>
+    </div>
   );
 }

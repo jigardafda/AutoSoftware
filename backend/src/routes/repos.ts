@@ -1,9 +1,12 @@
 import type { FastifyPluginAsync } from "fastify";
 import fs from "fs/promises";
+import { spawn } from "child_process";
+import path from "path";
 import { prisma } from "../db.js";
-import { listRemoteRepos, listRemoteBranches } from "../services/git-providers.js";
+import { listRemoteRepos, listRemoteBranches, listPullRequests } from "../services/git-providers.js";
 import { schedulerService } from "../services/scheduler.js";
 import { listDirectory, readFile, safePath, getCurrentBranch, checkoutBranch, RepoFsError } from "../services/repo-fs.js";
+import { config } from "../config.js";
 import type { ConnectRepoInput, UpdateRepoInput, OAuthProvider } from "@autosoftware/shared";
 
 const MIME_TYPES: Record<string, string> = {
@@ -53,6 +56,29 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
       });
       if (!repo) return reply.code(404).send({ error: { message: "Repo not found" } });
 
+      // For local repos, list branches directly from the git repo on disk
+      if (repo.provider === "local") {
+        try {
+          const { simpleGit } = await import("simple-git");
+          const git = simpleGit(repo.cloneUrl);
+          const branchSummary = await git.branch();
+          const branches = branchSummary.all
+            .filter((name) => !name.startsWith("remotes/"))
+            .map((name) => ({
+              name,
+              isDefault: name === repo.defaultBranch,
+            }))
+            .sort((a, b) => {
+              if (a.isDefault) return -1;
+              if (b.isDefault) return 1;
+              return a.name.localeCompare(b.name);
+            });
+          return { data: branches };
+        } catch (err: any) {
+          return reply.code(500).send({ error: { message: `Failed to list branches: ${err.message}` } });
+        }
+      }
+
       const account = await prisma.account.findFirst({
         where: { userId: request.userId, provider: repo.provider },
       });
@@ -76,6 +102,97 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
       }
     }
   );
+
+  // GET /:id/pull-requests — list open PRs for a repository
+  app.get<{ Params: { id: string }; Querystring: { state?: string } }>(
+    "/:id/pull-requests",
+    async (request, reply) => {
+      const repo = await prisma.repository.findFirst({
+        where: { id: request.params.id, userId: request.userId },
+      });
+      if (!repo) return reply.code(404).send({ error: { message: "Repo not found" } });
+
+      if (repo.provider === "local") {
+        return reply.code(400).send({ error: { message: "Pull requests not available for local repos" } });
+      }
+
+      const account = await prisma.account.findFirst({
+        where: { userId: request.userId, provider: repo.provider },
+      });
+
+      // accessToken can be empty — listPullRequests → resolveGitHubToken will try gh CLI
+      const accessToken = account?.accessToken || "";
+      const state = (request.query.state as "open" | "closed" | "all") || "open";
+
+      try {
+        const prs = await listPullRequests(repo.provider, accessToken, repo.fullName, state);
+        return { data: prs };
+      } catch (err: any) {
+        if (err.message?.includes("Rate limited")) {
+          return reply.code(429).send({ error: { message: err.message } });
+        }
+        return reply.code(500).send({ error: { message: err.message } });
+      }
+    }
+  );
+
+  // Connect a local folder as a repository
+  app.post<{ Body: { path: string } }>("/connect-local", async (request, reply) => {
+    const { path: localPath } = request.body;
+    if (!localPath) {
+      return reply.code(400).send({ error: { message: "Path is required" } });
+    }
+
+    const { resolve, join, basename } = await import("path");
+    const { access: fsAccess } = await import("fs/promises");
+    const resolved = resolve(localPath);
+
+    // Validate it exists
+    try {
+      await fsAccess(resolved);
+    } catch {
+      return reply.code(400).send({ error: { message: "Path does not exist" } });
+    }
+
+    // Validate it's a git repo
+    try {
+      await fsAccess(join(resolved, ".git"));
+    } catch {
+      return reply.code(400).send({ error: { message: "Not a git repository. The selected folder must contain a .git directory." } });
+    }
+
+    const name = basename(resolved);
+
+    // Detect the current branch as default
+    const { simpleGit } = await import("simple-git");
+    const git = simpleGit(resolved);
+    let defaultBranch = "main";
+    try {
+      const branchSummary = await git.branch();
+      defaultBranch = branchSummary.current || "main";
+    } catch {}
+
+    // Check if already connected
+    const existing = await prisma.repository.findFirst({
+      where: { userId: request.userId, cloneUrl: resolved, provider: "local" },
+    });
+    if (existing) {
+      return reply.code(409).send({ error: { message: "This folder is already connected" } });
+    }
+
+    const repo = await prisma.repository.create({
+      data: {
+        userId: request.userId,
+        provider: "local",
+        providerRepoId: resolved,
+        fullName: name,
+        cloneUrl: resolved,
+        defaultBranch,
+      },
+    });
+
+    return reply.code(201).send({ data: repo });
+  });
 
   app.post<{ Body: ConnectRepoInput }>("/", async (request, reply) => {
     const { provider, providerRepoId, fullName, cloneUrl, defaultBranch } = request.body;
@@ -101,6 +218,15 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
     await schedulerService.triggerScan(repo.id);
 
     return reply.code(201).send({ data: repo });
+  });
+
+  // Get single repo
+  app.get<{ Params: { id: string } }>("/:id", async (request, reply) => {
+    const repo = await prisma.repository.findFirst({
+      where: { id: request.params.id, userId: request.userId },
+    });
+    if (!repo) return reply.code(404).send({ error: { message: "Repo not found" } });
+    return { data: repo };
   });
 
   app.patch<{ Params: { id: string }; Body: UpdateRepoInput }>(
@@ -291,15 +417,17 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
       try {
         const requestedPath = request.query.path || "";
         const requestedBranch = request.query.branch;
+        // For local repos, use the local path directly instead of the cloned repo dir
+        const rootOverride = repo.provider === "local" ? repo.cloneUrl : undefined;
 
         // If a branch is specified, checkout that branch first
         if (requestedBranch) {
-          await checkoutBranch(repo.id, requestedBranch);
+          await checkoutBranch(repo.id, requestedBranch, rootOverride);
         }
 
         const [entries, branch] = await Promise.all([
-          listDirectory(repo.id, requestedPath),
-          !requestedPath ? getCurrentBranch(repo.id) : Promise.resolve(undefined),
+          listDirectory(repo.id, requestedPath, rootOverride),
+          !requestedPath ? getCurrentBranch(repo.id, rootOverride) : Promise.resolve(undefined),
         ]);
         return { data: entries, ...(branch !== undefined && { branch }) };
       } catch (err: any) {
@@ -310,9 +438,10 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
           return reply.code(400).send({ error: { message: "Invalid branch name" } });
         }
         if (err.code === "ENOENT" || err.code === "ENOTDIR") {
-          return reply.code(404).send({
-            error: { message: "Repository files not available. Trigger a scan to clone it." },
-          });
+          const message = repo.provider === "local"
+            ? "Directory not found. The local path may have been moved or deleted."
+            : "Repository files not available. Trigger a scan to clone it.";
+          return reply.code(404).send({ error: { message } });
         }
         throw err;
       }
@@ -334,7 +463,8 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
       }
 
       try {
-        const resolved = safePath(repo.id, filePath);
+        const rootOverride = repo.provider === "local" ? repo.cloneUrl : undefined;
+        const resolved = safePath(repo.id, filePath, rootOverride);
         const stat = await fs.lstat(resolved);
         if (!stat.isFile()) {
           return reply.code(400).send({ error: { message: "Not a file" } });
@@ -381,13 +511,14 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
       }
 
       try {
+        const rootOverride = repo.provider === "local" ? repo.cloneUrl : undefined;
         // If a branch is specified, checkout that branch first
         const requestedBranch = request.query.branch;
         if (requestedBranch) {
-          await checkoutBranch(repo.id, requestedBranch);
+          await checkoutBranch(repo.id, requestedBranch, rootOverride);
         }
 
-        const result = await readFile(repo.id, filePath);
+        const result = await readFile(repo.id, filePath, rootOverride);
         return { data: result };
       } catch (err: any) {
         if (err instanceof RepoFsError && err.code === "PATH_TRAVERSAL") {
@@ -405,5 +536,74 @@ export const repoRoutes: FastifyPluginAsync = async (app) => {
         throw err;
       }
     },
+  );
+
+  // POST /:id/test-script — Run a script in the repo dir and stream output
+  app.post<{ Params: { id: string }; Body: { script: string } }>(
+    "/:id/test-script",
+    async (request, reply) => {
+      const repo = await prisma.repository.findFirst({
+        where: { id: request.params.id, userId: request.userId },
+      });
+      if (!repo) return reply.code(404).send({ error: "Repo not found" });
+
+      const script = request.body?.script;
+      if (!script) return reply.code(400).send({ error: "No script provided" });
+
+      // Determine the repo directory
+      const repoDirectory = repo.provider === "local"
+        ? repo.cloneUrl
+        : path.join(config.workDir, "repos", repo.fullName.replace("/", "-"));
+
+      // Verify directory exists
+      try {
+        await fs.access(repoDirectory);
+      } catch {
+        return reply.code(400).send({
+          error: `Repository directory not found: ${repoDirectory}. Try creating a workspace first.`,
+        });
+      }
+
+      reply.raw.writeHead(200, {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+      });
+
+      const child = spawn("bash", ["-c", script], {
+        cwd: repoDirectory,
+        env: { ...process.env, FORCE_COLOR: "0" },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+
+      child.stdout.on("data", (data: Buffer) => {
+        reply.raw.write(data);
+      });
+
+      child.stderr.on("data", (data: Buffer) => {
+        reply.raw.write(data);
+      });
+
+      // Kill the process after 15 seconds (dev servers run forever)
+      const timeout = setTimeout(() => {
+        reply.raw.write("\n--- Process running (stopped log capture after 15s) ---\n");
+        child.kill("SIGTERM");
+      }, 15_000);
+
+      child.on("close", (code) => {
+        clearTimeout(timeout);
+        if (code !== null && code !== 0) {
+          reply.raw.write(`\n--- Exited with code ${code} ---\n`);
+        }
+        reply.raw.end();
+      });
+
+      child.on("error", (err) => {
+        clearTimeout(timeout);
+        reply.raw.write(`\nError: ${err.message}\n`);
+        reply.raw.end();
+      });
+    }
   );
 };

@@ -1,16 +1,14 @@
 import { useMemo, useState } from 'react';
+import { BarChart3 } from 'lucide-react';
 import {
-  ComposedChart,
+  AreaChart,
   Area,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
 } from 'recharts';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 interface LOCData {
@@ -34,6 +32,34 @@ interface TimeSeriesChartProps {
 
 type ViewMode = 'loc' | 'timeSaved' | 'combined';
 
+function CustomTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl border border-border/60 bg-popover/95 backdrop-blur-lg px-4 py-3 shadow-2xl shadow-black/20">
+      <p className="text-xs font-semibold text-muted-foreground mb-2">{label}</p>
+      <div className="space-y-1.5">
+        {payload.map((entry: any) => {
+          const name =
+            entry.dataKey === 'linesAdded' ? 'Lines Added' :
+            entry.dataKey === 'linesDeleted' ? 'Lines Deleted' :
+            entry.dataKey === 'hoursSaved' ? 'Hours Saved' : entry.dataKey;
+          const val =
+            entry.dataKey === 'hoursSaved'
+              ? `${Number(entry.value).toFixed(1)} hrs`
+              : Number(entry.value).toLocaleString();
+          return (
+            <div key={entry.dataKey} className="flex items-center gap-2 text-sm">
+              <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
+              <span className="text-muted-foreground">{name}</span>
+              <span className="ml-auto font-semibold tabular-nums">{val}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function TimeSeriesChart({ locData, timeSavedData, title }: TimeSeriesChartProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('combined');
 
@@ -47,15 +73,9 @@ export function TimeSeriesChart({ locData, timeSavedData, title }: TimeSeriesCha
       taskCount: number;
     }>();
 
-    // Process LOC data
     for (const item of locData) {
       const existing = dateMap.get(item.date) || {
-        date: item.date,
-        linesAdded: 0,
-        linesDeleted: 0,
-        filesChanged: 0,
-        minutesSaved: 0,
-        taskCount: 0,
+        date: item.date, linesAdded: 0, linesDeleted: 0, filesChanged: 0, minutesSaved: 0, taskCount: 0,
       };
       existing.linesAdded = item.linesAdded;
       existing.linesDeleted = item.linesDeleted;
@@ -63,15 +83,9 @@ export function TimeSeriesChart({ locData, timeSavedData, title }: TimeSeriesCha
       dateMap.set(item.date, existing);
     }
 
-    // Process time saved data
     for (const item of timeSavedData) {
       const existing = dateMap.get(item.date) || {
-        date: item.date,
-        linesAdded: 0,
-        linesDeleted: 0,
-        filesChanged: 0,
-        minutesSaved: 0,
-        taskCount: 0,
+        date: item.date, linesAdded: 0, linesDeleted: 0, filesChanged: 0, minutesSaved: 0, taskCount: 0,
       };
       existing.minutesSaved = item.minutesSaved;
       existing.taskCount = item.taskCount;
@@ -82,153 +96,164 @@ export function TimeSeriesChart({ locData, timeSavedData, title }: TimeSeriesCha
       .sort((a, b) => a.date.localeCompare(b.date))
       .map(item => ({
         ...item,
-        date: item.date.slice(5), // "MM-DD" format
-        hoursSaved: item.minutesSaved / 60,
+        date: item.date.slice(5),
+        hoursSaved: Math.round((item.minutesSaved / 60) * 10) / 10,
       }));
   }, [locData, timeSavedData]);
 
   const hasData = combinedData.length > 0;
 
-  const viewModes: { value: ViewMode; label: string }[] = [
+  const views: { value: ViewMode; label: string }[] = [
     { value: 'combined', label: 'All' },
     { value: 'loc', label: 'Lines of Code' },
     { value: 'timeSaved', label: 'Time Saved' },
   ];
 
+  const showLOC = viewMode === 'combined' || viewMode === 'loc';
+  const showTime = viewMode === 'combined' || viewMode === 'timeSaved';
+
   return (
-    <Card className="flex flex-col">
-      <CardHeader className="p-4 pb-0">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm">{title}</CardTitle>
-          <div className="flex gap-1 p-1 bg-muted/50 rounded-lg">
-            {viewModes.map(mode => (
-              <button
-                key={mode.value}
-                onClick={() => setViewMode(mode.value)}
-                className={cn(
-                  "px-2.5 py-1 text-xs font-medium rounded-md transition-colors",
-                  viewMode === mode.value
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {mode.label}
-              </button>
-            ))}
-          </div>
+    <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden">
+      <div className="flex items-center justify-between px-6 pt-5 pb-2">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <div className="flex gap-0.5 p-0.5 bg-muted/60 rounded-lg">
+          {views.map(v => (
+            <button
+              key={v.value}
+              onClick={() => setViewMode(v.value)}
+              className={cn(
+                "px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200",
+                viewMode === v.value
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {v.label}
+            </button>
+          ))}
         </div>
-      </CardHeader>
-      <CardContent className="p-4 pt-4 flex-1">
+      </div>
+      <div className="px-4 pb-4 pt-2">
         {!hasData ? (
-          <div className="flex h-[280px] items-center justify-center">
-            <p className="text-sm text-muted-foreground">No data available</p>
+          <div className="flex h-[300px] items-center justify-center">
+            <div className="text-center">
+              <div className="h-12 w-12 rounded-2xl bg-muted/50 flex items-center justify-center mx-auto mb-3">
+                <BarChart3 className="h-6 w-6 text-muted-foreground/50" />
+              </div>
+              <p className="text-sm text-muted-foreground">No data available yet</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">Data will appear as tasks are completed</p>
+            </div>
           </div>
-        ) : (
-          <ResponsiveContainer width="100%" height={280}>
-            <ComposedChart data={combinedData}>
+        ) : viewMode === 'timeSaved' ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={combinedData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
               <defs>
-                <linearGradient id="linesAddedFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="oklch(0.65 0.18 145)" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="oklch(0.65 0.18 145)" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="linesDeletedFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="oklch(0.60 0.22 25)" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="oklch(0.60 0.22 25)" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="hoursSavedFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="oklch(0.65 0.18 195)" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="oklch(0.65 0.18 195)" stopOpacity={0} />
+                <linearGradient id="timeSavedGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#06b6d4" stopOpacity={0.3} />
+                  <stop offset="100%" stopColor="#06b6d4" stopOpacity={0.0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.01 250)" />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 11, fill: "oklch(0.55 0.01 250)" }}
-                tickLine={false}
-                axisLine={false}
-                interval="preserveStartEnd"
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.4} vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
+              <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" width={45} />
+              <Tooltip content={<CustomTooltip />} />
+              <Area
+                type="monotone"
+                dataKey="hoursSaved"
+                stroke="#06b6d4"
+                fill="url(#timeSavedGrad)"
+                strokeWidth={2.5}
+                dot={false}
+                activeDot={{ r: 5, fill: '#06b6d4', stroke: '#fff', strokeWidth: 2 }}
+                animationDuration={1000}
               />
-              <YAxis
-                yAxisId="left"
-                tick={{ fontSize: 11, fill: "oklch(0.55 0.01 250)" }}
-                tickLine={false}
-                axisLine={false}
-                allowDecimals={false}
-                width={45}
-              />
-              {(viewMode === 'combined' || viewMode === 'timeSaved') && (
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  tick={{ fontSize: 11, fill: "oklch(0.55 0.01 250)" }}
-                  tickLine={false}
-                  axisLine={false}
-                  allowDecimals={false}
-                  width={45}
-                />
-              )}
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "oklch(0.15 0.01 250)",
-                  border: "1px solid oklch(0.25 0.015 250)",
-                  borderRadius: "10px",
-                  fontSize: 12,
-                  color: "oklch(0.95 0 0)",
-                }}
-                formatter={(value, name) => {
-                  const numValue = Number(value) || 0;
-                  if (name === 'hoursSaved') return [`${numValue.toFixed(1)} hrs`, 'Hours Saved'];
-                  if (name === 'linesAdded') return [numValue.toLocaleString(), 'Lines Added'];
-                  if (name === 'linesDeleted') return [numValue.toLocaleString(), 'Lines Deleted'];
-                  return [numValue.toLocaleString(), String(name)];
-                }}
-              />
-              <Legend
-                verticalAlign="bottom"
-                iconSize={8}
-                formatter={(value: string) => (
-                  <span className="text-xs text-muted-foreground">
-                    {value === 'linesAdded' ? 'Lines Added' :
-                     value === 'linesDeleted' ? 'Lines Deleted' :
-                     value === 'hoursSaved' ? 'Hours Saved' : value}
-                  </span>
-                )}
-              />
-
-              {(viewMode === 'combined' || viewMode === 'loc') && (
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={combinedData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+              <defs>
+                <linearGradient id="addedGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#10b981" stopOpacity={0.3} />
+                  <stop offset="100%" stopColor="#10b981" stopOpacity={0.0} />
+                </linearGradient>
+                <linearGradient id="deletedGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#ef4444" stopOpacity={0.2} />
+                  <stop offset="100%" stopColor="#ef4444" stopOpacity={0.0} />
+                </linearGradient>
+                <linearGradient id="timeSavedGrad2" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#06b6d4" stopOpacity={0.2} />
+                  <stop offset="100%" stopColor="#06b6d4" stopOpacity={0.0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.4} vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" />
+              <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" width={45} />
+              <Tooltip content={<CustomTooltip />} />
+              {showLOC && (
                 <>
                   <Area
-                    yAxisId="left"
                     type="monotone"
                     dataKey="linesAdded"
-                    stroke="oklch(0.65 0.18 145)"
-                    fill="url(#linesAddedFill)"
+                    stroke="#10b981"
+                    fill="url(#addedGrad)"
                     strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4, fill: '#10b981', stroke: '#fff', strokeWidth: 2 }}
+                    animationDuration={1000}
                   />
-                  <Bar
-                    yAxisId="left"
+                  <Area
+                    type="monotone"
                     dataKey="linesDeleted"
-                    fill="oklch(0.60 0.22 25)"
-                    opacity={0.7}
-                    barSize={8}
+                    stroke="#ef4444"
+                    fill="url(#deletedGrad)"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4, fill: '#ef4444', stroke: '#fff', strokeWidth: 2 }}
+                    animationDuration={1200}
                   />
                 </>
               )}
-
-              {(viewMode === 'combined' || viewMode === 'timeSaved') && (
+              {showTime && (
                 <Area
-                  yAxisId={viewMode === 'timeSaved' ? 'left' : 'right'}
                   type="monotone"
                   dataKey="hoursSaved"
-                  stroke="oklch(0.65 0.18 195)"
-                  fill="url(#hoursSavedFill)"
+                  stroke="#06b6d4"
+                  fill="url(#timeSavedGrad2)"
                   strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 4, fill: '#06b6d4', stroke: '#fff', strokeWidth: 2 }}
+                  animationDuration={1400}
                 />
               )}
-            </ComposedChart>
+            </AreaChart>
           </ResponsiveContainer>
         )}
-      </CardContent>
-    </Card>
+
+        {/* Legend */}
+        {hasData && (
+          <div className="flex items-center justify-center gap-5 mt-2 pt-2">
+            {showLOC && (
+              <>
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2 w-5 rounded-full bg-emerald-500" />
+                  <span className="text-[11px] text-muted-foreground">Lines Added</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2 w-5 rounded-full bg-red-500" />
+                  <span className="text-[11px] text-muted-foreground">Lines Deleted</span>
+                </div>
+              </>
+            )}
+            {showTime && (
+              <div className="flex items-center gap-1.5">
+                <div className="h-2 w-5 rounded-full bg-cyan-500" />
+                <span className="text-[11px] text-muted-foreground">Hours Saved</span>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

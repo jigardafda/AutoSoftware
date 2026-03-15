@@ -7,9 +7,9 @@ import {
   Search,
   GitPullRequest,
   FileCode,
-  AlertCircle
+  AlertCircle,
+  Activity,
 } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api } from '@/lib/api';
@@ -32,7 +32,6 @@ function relativeTime(dateStr: string): string {
   const now = Date.now();
   const then = new Date(dateStr).getTime();
   const diffSec = Math.floor((now - then) / 1000);
-
   if (diffSec < 60) return 'just now';
   const diffMin = Math.floor(diffSec / 60);
   if (diffMin < 60) return `${diffMin}m ago`;
@@ -40,33 +39,20 @@ function relativeTime(dateStr: string): string {
   if (diffHr < 24) return `${diffHr}h ago`;
   const diffDay = Math.floor(diffHr / 24);
   if (diffDay < 7) return `${diffDay}d ago`;
-  const diffWeek = Math.floor(diffDay / 7);
-  return `${diffWeek}w ago`;
+  return `${Math.floor(diffDay / 7)}w ago`;
 }
 
-function getEventIcon(type: string, _status?: string) {
-  // Normalize type to handle both underscore and dot notation
-  const normalizedType = type.replace(/_/g, '.');
-
-  switch (normalizedType) {
-    case 'task.created':
-      return { icon: PlusCircle, color: 'text-blue-500', bgColor: 'bg-blue-500/10' };
-    case 'task.completed':
-      return { icon: CheckCircle, color: 'text-green-500', bgColor: 'bg-green-500/10' };
-    case 'task.failed':
-      return { icon: XCircle, color: 'text-red-500', bgColor: 'bg-red-500/10' };
-    case 'task.started':
-      return { icon: Play, color: 'text-yellow-500', bgColor: 'bg-yellow-500/10' };
-    case 'scan.started':
-    case 'scan.completed':
-      return { icon: Search, color: 'text-purple-500', bgColor: 'bg-purple-500/10' };
-    case 'pr.created':
-    case 'pr.merged':
-      return { icon: GitPullRequest, color: 'text-primary', bgColor: 'bg-primary/10' };
-    case 'code.changed':
-      return { icon: FileCode, color: 'text-muted-foreground', bgColor: 'bg-muted' };
-    default:
-      return { icon: AlertCircle, color: 'text-muted-foreground', bgColor: 'bg-muted' };
+function getEventStyle(type: string) {
+  const t = type.replace(/_/g, '.');
+  switch (t) {
+    case 'task.created': return { icon: PlusCircle, color: '#3b82f6', bg: 'bg-blue-500/10' };
+    case 'task.completed': return { icon: CheckCircle, color: '#10b981', bg: 'bg-emerald-500/10' };
+    case 'task.failed': return { icon: XCircle, color: '#ef4444', bg: 'bg-red-500/10' };
+    case 'task.started': return { icon: Play, color: '#f59e0b', bg: 'bg-amber-500/10' };
+    case 'scan.started': case 'scan.completed': return { icon: Search, color: '#8b5cf6', bg: 'bg-violet-500/10' };
+    case 'pr.created': case 'pr.merged': return { icon: GitPullRequest, color: '#06b6d4', bg: 'bg-cyan-500/10' };
+    case 'code.changed': return { icon: FileCode, color: '#64748b', bg: 'bg-slate-500/10' };
+    default: return { icon: AlertCircle, color: '#64748b', bg: 'bg-slate-500/10' };
   }
 }
 
@@ -74,30 +60,26 @@ export function ActivityTimeline() {
   const { data: activities, isLoading } = useQuery({
     queryKey: ['activity', 'recent'],
     queryFn: () => api.activity.list({ limit: '20' }),
-    refetchInterval: 30000, // Refresh every 30 seconds
+    refetchInterval: 30000,
   });
 
   if (isLoading) {
     return (
-      <Card>
-        <CardHeader className="p-4 pb-0">
-          <Skeleton className="h-5 w-32" />
-        </CardHeader>
-        <CardContent className="p-4 pt-4">
-          <div className="space-y-4">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex items-start gap-3">
-                <Skeleton className="h-8 w-8 rounded-full shrink-0" />
-                <div className="flex-1 space-y-1">
-                  <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-3 w-1/2" />
-                </div>
-                <Skeleton className="h-3 w-16" />
+      <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm p-6">
+        <Skeleton className="h-5 w-32 mb-4" />
+        <div className="space-y-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex items-start gap-3">
+              <Skeleton className="h-8 w-8 rounded-full shrink-0" />
+              <div className="flex-1 space-y-1.5">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
               </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+              <Skeleton className="h-3 w-16" />
+            </div>
+          ))}
+        </div>
+      </div>
     );
   }
 
@@ -111,58 +93,43 @@ export function ActivityTimeline() {
   }));
 
   return (
-    <Card>
-      <CardHeader className="p-4 pb-0">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm">Recent Activity</CardTitle>
-          <span className="text-xs text-muted-foreground">
-            Last 20 events
-          </span>
-        </div>
-      </CardHeader>
-      <CardContent className="p-4 pt-2">
+    <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden">
+      <div className="flex items-center justify-between px-6 pt-5 pb-3">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <Activity size={15} className="text-muted-foreground" />
+          Recent Activity
+        </h3>
+        <span className="text-[11px] text-muted-foreground/70 font-medium">Last 20 events</span>
+      </div>
+      <div className="px-4 pb-4">
         {events.length === 0 ? (
           <div className="flex h-32 items-center justify-center">
             <p className="text-sm text-muted-foreground">No recent activity</p>
           </div>
         ) : (
-          <ScrollArea className="h-[300px]">
-            <div className="relative">
-              {/* Timeline line */}
-              <div className="absolute left-4 top-2 bottom-2 w-px bg-border" />
+          <ScrollArea className="h-[320px]">
+            <div className="relative pl-2">
+              {/* Timeline rail */}
+              <div className="absolute left-[17px] top-3 bottom-3 w-px bg-gradient-to-b from-border via-border/60 to-transparent" />
 
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 {events.map((event) => {
-                  const { icon: Icon, color, bgColor } = getEventIcon(event.type, event.metadata?.status);
-
+                  const { icon: Icon, color, bg } = getEventStyle(event.type);
                   return (
                     <div
                       key={event.id}
-                      className={cn(
-                        "relative flex items-start gap-3 p-2 rounded-lg transition-colors",
-                        "hover:bg-muted/50"
-                      )}
+                      className="relative flex items-start gap-3 p-2.5 rounded-xl transition-colors hover:bg-muted/40 group"
                     >
-                      {/* Icon */}
-                      <div className={cn(
-                        "relative z-10 h-8 w-8 rounded-full flex items-center justify-center shrink-0",
-                        bgColor
-                      )}>
-                        <Icon size={16} className={color} />
+                      <div className={cn("relative z-10 h-8 w-8 rounded-full flex items-center justify-center shrink-0 ring-2 ring-background", bg)}>
+                        <Icon size={15} style={{ color }} />
                       </div>
-
-                      {/* Content */}
-                      <div className="flex-1 min-w-0 pt-1">
-                        <p className="text-sm truncate">{event.title}</p>
+                      <div className="flex-1 min-w-0 pt-0.5">
+                        <p className="text-sm truncate group-hover:text-foreground transition-colors">{event.title}</p>
                         {event.description && (
-                          <p className="text-xs text-muted-foreground truncate">
-                            {event.description}
-                          </p>
+                          <p className="text-[11px] text-muted-foreground truncate mt-0.5">{event.description}</p>
                         )}
                       </div>
-
-                      {/* Time */}
-                      <span className="text-xs text-muted-foreground whitespace-nowrap pt-1">
+                      <span className="text-[11px] text-muted-foreground/60 whitespace-nowrap pt-1 font-medium tabular-nums">
                         {relativeTime(event.timestamp)}
                       </span>
                     </div>
@@ -172,7 +139,7 @@ export function ActivityTimeline() {
             </div>
           </ScrollArea>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

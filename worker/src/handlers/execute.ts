@@ -630,8 +630,9 @@ export async function handleTaskExecution(jobs: { data: { taskId: string } }[]) 
   setupAgentSdkAuth(auth);
   console.log(`Using ${auth.authType === "oauth" ? "OAuth token" : "API key"} for execution`);
 
-  const account = repo.user.accounts.find((a: any) => a.provider === repo.provider);
-  if (!account) {
+  const isLocalRepo = repo.provider === "local";
+  const account = isLocalRepo ? null : repo.user.accounts.find((a: any) => a.provider === repo.provider);
+  if (!isLocalRepo && !account) {
     await prisma.task.update({
       where: { id: taskId },
       data: {
@@ -691,7 +692,11 @@ export async function handleTaskExecution(jobs: { data: { taskId: string } }[]) 
   const targetBranch = task.targetBranch || repo.defaultBranch;
 
   try {
-    repoDir = await cloneOrPullRepo(repo.id, repo.cloneUrl, account.accessToken, repo.provider);
+    if (isLocalRepo) {
+      repoDir = repo.cloneUrl;
+    } else {
+      repoDir = await cloneOrPullRepo(repo.id, repo.cloneUrl, account!.accessToken, repo.provider);
+    }
     worktreeDir = await createWorktree(repoDir, branchName, targetBranch);
 
     // Complete step 0 (preparing environment), start step 1 (analyzing)

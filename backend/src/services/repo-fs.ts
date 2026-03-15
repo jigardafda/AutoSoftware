@@ -67,12 +67,12 @@ const LANGUAGE_MAP: Record<string, string> = {
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
-function repoDir(repoId: string): string {
-  return path.join(config.workDir, "repos", repoId);
+function repoDir(repoId: string, rootOverride?: string): string {
+  return rootOverride || path.join(config.workDir, "repos", repoId);
 }
 
-export function safePath(repoId: string, relativePath: string): string {
-  const root = repoDir(repoId);
+export function safePath(repoId: string, relativePath: string, rootOverride?: string): string {
+  const root = repoDir(repoId, rootOverride);
   const resolved = path.resolve(root, relativePath);
   if (!resolved.startsWith(root + path.sep) && resolved !== root) {
     throw new RepoFsError("Path traversal detected", "PATH_TRAVERSAL");
@@ -107,9 +107,9 @@ function isBinary(buffer: Buffer): boolean {
 
 // ── Public API ─────────────────────────────────────────────────────────
 
-export async function getCurrentBranch(repoId: string): Promise<string | null> {
+export async function getCurrentBranch(repoId: string, rootOverride?: string): Promise<string | null> {
   try {
-    const headPath = path.join(repoDir(repoId), ".git", "HEAD");
+    const headPath = path.join(repoDir(repoId, rootOverride), ".git", "HEAD");
     const content = (await fs.readFile(headPath, "utf-8")).trim();
     // "ref: refs/heads/main" → "main"
     if (content.startsWith("ref: refs/heads/")) {
@@ -122,8 +122,8 @@ export async function getCurrentBranch(repoId: string): Promise<string | null> {
   }
 }
 
-export async function checkoutBranch(repoId: string, branch: string): Promise<void> {
-  const dir = repoDir(repoId);
+export async function checkoutBranch(repoId: string, branch: string, rootOverride?: string): Promise<void> {
+  const dir = repoDir(repoId, rootOverride);
   const { execFile } = await import("child_process");
   const { promisify } = await import("util");
   const execFileAsync = promisify(execFile);
@@ -133,11 +133,21 @@ export async function checkoutBranch(repoId: string, branch: string): Promise<vo
     throw new RepoFsError("Invalid branch name", "INVALID_BRANCH");
   }
 
-  // Fetch the branch from remote first (in case it's new)
+  // Check if already on the requested branch
   try {
-    await execFileAsync("git", ["fetch", "origin", branch], { cwd: dir });
+    const { stdout } = await execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: dir });
+    if (stdout.trim() === branch) return; // already on the right branch
   } catch {
-    // Ignore fetch errors - branch might already be local
+    // Ignore — proceed with checkout
+  }
+
+  // Only fetch from remote for cloned repos (not local repos)
+  if (!rootOverride) {
+    try {
+      await execFileAsync("git", ["fetch", "origin", branch], { cwd: dir, timeout: 10_000 });
+    } catch {
+      // Ignore fetch errors - branch might already be local
+    }
   }
 
   // Checkout the branch
@@ -147,39 +157,47 @@ export async function checkoutBranch(repoId: string, branch: string): Promise<vo
 export async function listDirectory(
   repoId: string,
   relativePath: string,
+  rootOverride?: string,
 ): Promise<FileEntry[]> {
-  const dirPath = safePath(repoId, relativePath);
+  const dirPath = safePath(repoId, relativePath, rootOverride);
+  const root = repoDir(repoId, rootOverride);
 
-  const entries = await fs.readdir(dirPath, { withFileTypes: false });
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
   const results: FileEntry[] = [];
 
-  for (const entryName of entries) {
+  // Collect file stat promises in parallel for sizes
+  const fileStatPromises: Promise<void>[] = [];
+
+  for (const entry of entries) {
     // Filter out .git directory
-    if (entryName === ".git") continue;
-
-    const entryPath = path.join(dirPath, entryName);
-    const stat = await fs.lstat(entryPath);
-
+    if (entry.name === ".git") continue;
     // Skip symlinks
-    if (stat.isSymbolicLink()) continue;
+    if (entry.isSymbolicLink()) continue;
 
-    const relPath = path.relative(repoDir(repoId), entryPath);
+    const entryPath = path.join(dirPath, entry.name);
+    const relPath = path.relative(root, entryPath);
 
-    if (stat.isDirectory()) {
+    if (entry.isDirectory()) {
       results.push({
-        name: entryName,
+        name: entry.name,
         path: relPath,
         type: "directory",
       });
-    } else if (stat.isFile()) {
-      results.push({
-        name: entryName,
+    } else if (entry.isFile()) {
+      const fileEntry: FileEntry = {
+        name: entry.name,
         path: relPath,
         type: "file",
-        size: stat.size,
-      });
+      };
+      results.push(fileEntry);
+      // Get file size in parallel
+      fileStatPromises.push(
+        fs.stat(entryPath).then((stat) => { fileEntry.size = stat.size; })
+      );
     }
   }
+
+  await Promise.all(fileStatPromises);
 
   // Sort: directories first, then alphabetical
   results.sort((a, b) => {
@@ -195,8 +213,9 @@ export async function listDirectory(
 export async function readFile(
   repoId: string,
   relativePath: string,
+  rootOverride?: string,
 ): Promise<FileContentResult> {
-  const filePath = safePath(repoId, relativePath);
+  const filePath = safePath(repoId, relativePath, rootOverride);
 
   const stat = await fs.lstat(filePath);
 

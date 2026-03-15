@@ -116,8 +116,10 @@ export async function handleRepoScan(jobs: { data: { repoId: string; projectId?:
     return;
   }
 
-  const account = repo.user.accounts.find((a: any) => a.provider === repo.provider);
-  if (!account) {
+  // Local repos don't need an OAuth account
+  const isLocalRepo = repo.provider === "local";
+  const account = isLocalRepo ? null : repo.user.accounts.find((a: any) => a.provider === repo.provider);
+  if (!isLocalRepo && !account) {
     if (existingScanId) {
       await prisma.scanResult.update({
         where: { id: existingScanId },
@@ -171,9 +173,10 @@ export async function handleRepoScan(jobs: { data: { repoId: string; projectId?:
     return;
   }
 
-  // Set up auth for Agent SDK (OAuth or API key)
+  // Set up auth for Agent SDK
   setupAgentSdkAuth(auth);
-  console.log(`Using ${auth.authType === "oauth" ? "OAuth token (Max subscription)" : "API key"} for scan`);
+  const authLabel = auth.authType === "cli" ? "CLI auth" : auth.authType === "oauth" ? "OAuth token (Max subscription)" : "API key";
+  console.log(`Using ${authLabel} for scan`);
 
   await prisma.repository.update({
     where: { id: repoId },
@@ -239,14 +242,22 @@ export async function handleRepoScan(jobs: { data: { repoId: string; projectId?:
   let totalCostUsd = 0;
 
   try {
-    await emitLog(scanResult.id, "step", "Cloning repository...");
-    const repoDir = await cloneOrPullRepo(
-      repoId,
-      repo.cloneUrl,
-      account.accessToken,
-      repo.provider
-    );
-    await emitLog(scanResult.id, "info", "Repository ready");
+    let repoDir: string;
+    if (isLocalRepo) {
+      // Local repos: use the local path directly, no clone needed
+      repoDir = repo.cloneUrl;
+      await emitLog(scanResult.id, "step", "Using local repository...");
+      await emitLog(scanResult.id, "info", `Repository path: ${repoDir}`);
+    } else {
+      await emitLog(scanResult.id, "step", "Cloning repository...");
+      repoDir = await cloneOrPullRepo(
+        repoId,
+        repo.cloneUrl,
+        account!.accessToken,
+        repo.provider
+      );
+      await emitLog(scanResult.id, "info", "Repository ready");
+    }
 
     // Checkout the requested branch (or default branch)
     const targetBranch = requestedBranch || repo.defaultBranch;
@@ -255,7 +266,10 @@ export async function handleRepoScan(jobs: { data: { repoId: string; projectId?:
       const git = simpleGit(repoDir);
       await emitLog(scanResult.id, "step", `Checking out branch: ${targetBranch}...`);
       try {
-        await git.fetch("origin", targetBranch);
+        // Only fetch from remote for non-local repos
+        if (!isLocalRepo) {
+          await git.fetch("origin", targetBranch);
+        }
         await git.checkout(targetBranch);
         await emitLog(scanResult.id, "info", `On branch ${targetBranch}`);
       } catch (branchErr) {

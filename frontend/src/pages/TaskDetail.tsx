@@ -40,6 +40,7 @@ import {
   Download,
   Copy,
   Eye,
+  Monitor,
 } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
 import { PlanningQuestionsCard } from "@/components/tasks/PlanningQuestionsCard";
@@ -734,6 +735,17 @@ export function TaskDetail() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const workspaceMutation = useMutation({
+    mutationFn: () => api.tasks.openWorkspace(id!),
+    onSuccess: (data) => {
+      if (data.created) {
+        toast.success("Workspace created");
+      }
+      navigate(`/workspaces/${data.workspace.id}`);
+    },
+    onError: (err: Error) => toast.error(err.message || "Failed to open workspace"),
+  });
+
   const updateBranchMutation = useMutation({
     mutationFn: (targetBranch: string | null) => api.tasks.update(id!, { targetBranch }),
     onSuccess: () => {
@@ -929,6 +941,15 @@ export function TaskDetail() {
               Cancel
             </Button>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => workspaceMutation.mutate()}
+            disabled={workspaceMutation.isPending}
+          >
+            {workspaceMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Monitor className="h-4 w-4" />}
+            Open in Workspace
+          </Button>
           <ConfirmDeleteDialog
             title="Delete task"
             description="This will permanently delete this task. This action cannot be undone."

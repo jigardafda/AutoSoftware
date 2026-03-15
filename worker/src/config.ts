@@ -15,6 +15,7 @@ export const config = {
   defaultTaskBudget: parseFloat(process.env.DEFAULT_TASK_BUDGET || "10.0"),
   defaultPlanBudget: parseFloat(process.env.DEFAULT_PLAN_BUDGET || "1.0"),
   apiKeyEncryptionSecret: process.env.API_KEY_ENCRYPTION_SECRET || "",
+  isBundled: process.env.IS_BUNDLED === "1",
 };
 
 /**
@@ -35,7 +36,10 @@ export function setupAgentAuth(): void {
 
 /**
  * Check if any authentication is configured.
+ * In local/bundled mode, the Agent SDK uses the CLI's own auth (claude login),
+ * so explicit env vars are not required.
  */
 export function hasAuthConfigured(): boolean {
+  if (config.isBundled) return true; // CLI's own auth is sufficient
   return !!(config.claudeOauthToken || config.anthropicApiKey);
 }

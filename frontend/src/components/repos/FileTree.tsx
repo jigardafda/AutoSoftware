@@ -56,6 +56,7 @@ function DirectoryNode({
     queryKey: ["repo-tree", repoId, entry.path, branch],
     queryFn: () => api.repos.tree(repoId, entry.path, branch || undefined),
     enabled: isExpanded,
+    staleTime: 60_000,
   });
 
   const children = result?.data;
@@ -187,6 +188,7 @@ export function FileTree({ repoId, branch, onSelectFile, selectedPath, onBranchC
   const { data: rootResult, isLoading, isError } = useQuery({
     queryKey: ["repo-tree", repoId, "", branch],
     queryFn: () => api.repos.tree(repoId, undefined, branch || undefined),
+    staleTime: 60_000,
   });
 
   const rootEntries = rootResult?.data;

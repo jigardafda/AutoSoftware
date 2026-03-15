@@ -1,7 +1,7 @@
-import { query, type SDKResultSuccess, type SDKResultError } from "@anthropic-ai/claude-agent-sdk";
 import { prisma } from "../db.js";
 import { estimateCost } from "@autosoftware/shared";
 import { emitTerminalOutput, emitFileChange } from "./event-notifier.js";
+import { acpQuery, resolveAgentConfig, type AgentConfig } from "./acp-client.js";
 
 interface QueryOptions {
   model?: string;
@@ -28,36 +28,7 @@ interface AgentQueryResult {
 }
 
 /**
- * Extract actual usage from SDK result message.
- */
-function extractUsageFromResult(
-  result: SDKResultSuccess | SDKResultError
-): { inputTokens: number; outputTokens: number; costUsd: number } {
-  // Use actual cost from SDK
-  const costUsd = result.total_cost_usd || 0;
-
-  // Extract tokens from modelUsage (aggregates all models used)
-  let inputTokens = 0;
-  let outputTokens = 0;
-
-  if (result.modelUsage) {
-    for (const usage of Object.values(result.modelUsage)) {
-      inputTokens += usage.inputTokens || 0;
-      outputTokens += usage.outputTokens || 0;
-    }
-  }
-
-  // Fallback to usage object if modelUsage is empty
-  if (inputTokens === 0 && outputTokens === 0 && result.usage) {
-    inputTokens = (result.usage as any).input_tokens || 0;
-    outputTokens = (result.usage as any).output_tokens || 0;
-  }
-
-  return { inputTokens, outputTokens, costUsd };
-}
-
-/**
- * Estimate token count from text (fallback for when SDK doesn't provide tokens).
+ * Estimate token count from text (fallback for when agent doesn't provide tokens).
  * Rough approximation: ~3.5 characters per token for English/code.
  */
 export function estimateTokens(text: string): number {
@@ -65,9 +36,8 @@ export function estimateTokens(text: string): number {
 }
 
 /**
- * Simple one-shot query using the Agent SDK.
- * Uses OAuth token if available, falls back to API key.
- * Returns result with actual token usage from SDK.
+ * Simple one-shot query using an ACP-compatible agent CLI.
+ * Sends a prompt and returns the result text with usage estimates.
  */
 export async function simpleQuery(
   systemPrompt: string,
@@ -76,42 +46,33 @@ export async function simpleQuery(
 ): Promise<QueryResult> {
   const { model = "claude-sonnet-4-20250514" } = options;
 
-  let result = "";
-  let sdkResult: SDKResultSuccess | SDKResultError | null = null;
-
-  for await (const message of query({
+  const agentResult = await acpQuery({
     prompt: userMessage,
-    options: {
-      allowedTools: [],
-      maxTurns: 1,
-      systemPrompt,
-      model,
-    },
-  })) {
-    if (message.type === "result") {
-      sdkResult = message;
-      if (message.subtype === "success") {
-        result = message.result;
-      }
-    }
-  }
+    systemPrompt,
+  });
 
-  // Extract actual usage from SDK result
-  const usage = sdkResult
-    ? extractUsageFromResult(sdkResult)
+  // Use actual usage from ACP if available, fall back to estimation
+  const usage = agentResult.usage.inputTokens > 0
+    ? {
+        inputTokens: agentResult.usage.inputTokens,
+        outputTokens: agentResult.usage.outputTokens,
+        costUsd: agentResult.usage.costUsd,
+      }
     : {
-        // Fallback to estimation if no result (shouldn't happen)
         inputTokens: estimateTokens(systemPrompt + "\n" + userMessage),
-        outputTokens: estimateTokens(result),
-        costUsd: estimateCost(model, estimateTokens(systemPrompt + "\n" + userMessage), estimateTokens(result)),
+        outputTokens: estimateTokens(agentResult.result),
+        costUsd: estimateCost(
+          model,
+          estimateTokens(systemPrompt + "\n" + userMessage),
+          estimateTokens(agentResult.result)
+        ),
       };
 
-  return { result, usage };
+  return { result: agentResult.result, usage };
 }
 
 /**
  * Record usage to the database for a specific API key.
- * Now uses actual cost from SDK when available.
  */
 export async function recordUsage(
   apiKeyId: string | null,
@@ -130,7 +91,7 @@ export async function recordUsage(
       model,
       inputTokens,
       outputTokens,
-      estimatedCostUsd: costUsd, // Now stores actual cost from SDK
+      estimatedCostUsd: costUsd,
       source,
       sourceId,
     },
@@ -155,7 +116,6 @@ export async function simpleQueryWithUsage(
 
   const result = await simpleQuery(systemPrompt, userMessage, queryOptions);
 
-  // Record usage if we have an API key ID
   if (apiKeyId) {
     await recordUsage(
       apiKeyId,
@@ -179,14 +139,16 @@ interface PluginPath {
 interface AgentQueryConfig {
   prompt: string;
   options: {
-    allowedTools: string[];
+    allowedTools?: string[];
     permissionMode?: "bypassPermissions" | "default";
-    maxTurns: number;
+    maxTurns?: number;
     maxBudgetUsd?: number;
     cwd?: string;
     systemPrompt?: string;
     model?: string;
     plugins?: PluginPath[];
+    /** Agent ID to use (e.g. "claude-code", "codex", "gemini") */
+    agentId?: string;
   };
 }
 
@@ -202,7 +164,7 @@ interface AgentQueryWithUsageOptions {
 
 /**
  * Run an agentic query with usage tracking and optional live logging.
- * Uses actual token counts and costs from SDK result.
+ * Spawns an ACP-compatible agent CLI and streams events.
  */
 export async function agentQueryWithUsage(
   config: AgentQueryConfig,
@@ -211,115 +173,117 @@ export async function agentQueryWithUsage(
   const { apiKeyId, source, sourceId, onLog, taskId } = usageOptions;
   const model = config.options.model || "claude-sonnet-4-20250514";
 
-  let result = "";
-  let sessionId: string | undefined;
-  let turnCount = 0;
-  let sdkResult: SDKResultSuccess | SDKResultError | null = null;
+  const agent = resolveAgentConfig(config.options.agentId);
 
-  for await (const message of query(config)) {
-    // Capture session ID
-    if (message.type === "system" && message.subtype === "init") {
-      sessionId = message.session_id;
-      await onLog?.("step", "Agent session started", { sessionId });
-    }
+  await onLog?.("step", "Starting agent session...");
 
-    // Log assistant output
-    if (message.type === "assistant" && message.message?.content) {
-      turnCount++;
-      for (const block of message.message.content) {
-        if (block.type === "text") {
-          // Log thinking/response (truncated for display)
-          const preview = block.text.length > 200
-            ? block.text.slice(0, 200) + "..."
-            : block.text;
-          await onLog?.("info", preview, { turn: turnCount, type: "text" });
-
-          // Emit terminal output for live view
+  const agentResult = await acpQuery({
+    prompt: config.prompt,
+    systemPrompt: config.options.systemPrompt,
+    cwd: config.options.cwd,
+    agent,
+    onUpdate: async (event) => {
+      switch (event.type) {
+        case "text": {
+          const textData = event.data as { text: string };
+          const preview =
+            textData.text.length > 200
+              ? textData.text.slice(0, 200) + "..."
+              : textData.text;
+          await onLog?.("info", preview, { type: "text" });
           if (taskId) {
-            await emitTerminalOutput(taskId, "stdout", block.text).catch(() => {});
+            await emitTerminalOutput(taskId, "stdout", textData.text).catch(
+              () => {}
+            );
           }
+          break;
         }
-        // Log tool calls
-        if (block.type === "tool_use") {
-          await onLog?.("tool", `Using tool: ${block.name}`, {
-            turn: turnCount,
-            tool: block.name,
-            input: block.input
+
+        case "tool_call": {
+          const toolData = event.data as {
+            title?: string;
+            status?: string;
+            kind?: string;
+            rawInput?: unknown;
+            locations?: Array<{ uri: string }>;
+          };
+          await onLog?.("tool", `Using tool: ${toolData.title || "unknown"}`, {
+            tool: toolData.title,
+            status: toolData.status,
           });
-
-          // Emit terminal output for tool calls
           if (taskId) {
-            const toolOutput = `[Tool: ${block.name}] ${JSON.stringify(block.input, null, 2)}`;
-            await emitTerminalOutput(taskId, "stdout", toolOutput).catch(() => {});
+            const toolOutput = `[Tool: ${toolData.title}] ${JSON.stringify(toolData.rawInput, null, 2)}`;
+            await emitTerminalOutput(taskId, "stdout", toolOutput).catch(
+              () => {}
+            );
 
-            // Emit file change events for Edit/Write tools
-            if (block.name === "Edit" || block.name === "Write") {
-              const input = block.input as { file_path?: string; old_string?: string; new_string?: string; content?: string };
-              if (input.file_path) {
-                const operation = block.name === "Write" ? "create" : "modify";
-                await emitFileChange(taskId, operation, input.file_path, {
-                  oldContent: input.old_string,
-                  newContent: input.new_string || input.content,
-                }).catch(() => {});
+            // Emit file change events for edit/write tools
+            if (
+              toolData.kind === "file" &&
+              toolData.locations?.length
+            ) {
+              for (const loc of toolData.locations) {
+                await emitFileChange(taskId, "modify", loc.uri).catch(
+                  () => {}
+                );
               }
             }
           }
+          break;
         }
-      }
-    }
 
-    // Log tool results
-    if (message.type === "user" && (message as any).message?.content) {
-      const content = (message as any).message.content;
-      if (Array.isArray(content)) {
-        for (const block of content) {
-          if (block.type === "tool_result" && taskId) {
-            const resultContent = typeof block.content === "string"
-              ? block.content
-              : JSON.stringify(block.content);
-            // Emit tool result as terminal output
-            const truncated = resultContent.length > 500
-              ? resultContent.slice(0, 500) + "... [truncated]"
-              : resultContent;
+        case "tool_call_update": {
+          const updateData = event.data as {
+            toolCallId?: string;
+            status?: string;
+          };
+          if (taskId && updateData.status) {
             await emitTerminalOutput(
               taskId,
-              block.is_error ? "stderr" : "stdout",
-              `[Result] ${truncated}`
+              "stdout",
+              `[Tool Result] ${updateData.status}`
             ).catch(() => {});
           }
+          break;
         }
-      }
-    }
 
-    // Capture final result
-    if (message.type === "result") {
-      sdkResult = message;
-      if (message.subtype === "success") {
-        result = message.result;
-        await onLog?.("success", "Agent completed successfully", {
-          turns: turnCount,
-          cost: message.total_cost_usd,
-        });
-      } else {
-        await onLog?.("error", `Agent stopped: ${message.subtype}`, { subtype: message.subtype });
-        throw new Error(`Agent stopped: ${message.subtype}`);
+        default:
+          break;
       }
-    }
-  }
+    },
+  });
 
-  // Extract actual usage from SDK result
-  const usage = sdkResult
-    ? extractUsageFromResult(sdkResult)
-    : { inputTokens: 0, outputTokens: 0, costUsd: 0 };
+  // Use actual usage from ACP if available, fall back to estimation
+  const usage =
+    agentResult.usage.inputTokens > 0
+      ? agentResult.usage
+      : {
+          inputTokens: estimateTokens(config.prompt),
+          outputTokens: estimateTokens(agentResult.result),
+          costUsd: agentResult.usage.costUsd || 0,
+        };
+
+  await onLog?.("success", "Agent completed successfully", {
+    cost: usage.costUsd,
+    stopReason: agentResult.stopReason,
+  });
 
   // Record usage if we have an API key ID
   if (apiKeyId) {
-    await recordUsage(apiKeyId, model, usage.inputTokens, usage.outputTokens, usage.costUsd, source, sourceId);
+    await recordUsage(
+      apiKeyId,
+      model,
+      usage.inputTokens,
+      usage.outputTokens,
+      usage.costUsd,
+      source,
+      sourceId
+    );
   }
 
   return {
-    result,
-    sessionId,
+    result: agentResult.result,
+    sessionId: agentResult.sessionId,
     usage,
   };
 }

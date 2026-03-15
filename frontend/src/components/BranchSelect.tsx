@@ -46,7 +46,7 @@ export function BranchSelect({
 
   // Find the default branch from the list or use the provided default name
   const defaultBranch = branches?.find((b) => b.isDefault);
-  const defaultName = defaultBranchName || defaultBranch?.name || "main";
+  const defaultName = defaultBranchName || defaultBranch?.name || branches?.[0]?.name || "default";
 
   // Display text
   const displayValue = value || "default";

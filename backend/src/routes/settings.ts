@@ -11,13 +11,17 @@ export interface UserSettings {
   scanBudget?: number;
   taskBudget?: number;
   planBudget?: number;
+  defaultAgent?: string;
+  /** Per-agent model preferences, e.g. { "claude-code": "claude-sonnet-4-6" } */
+  agentModels?: Record<string, string>;
   githubLabelMapping?: GitHubLabelMapping;
 }
 
-const DEFAULT_SETTINGS: Required<UserSettings> = {
+const DEFAULT_SETTINGS = {
   scanBudget: 2.0,
   taskBudget: 10.0,
   planBudget: 1.0,
+  defaultAgent: "claude-code",
 };
 
 export const settingsRoutes: FastifyPluginAsync = async (app) => {
@@ -41,10 +45,16 @@ export const settingsRoutes: FastifyPluginAsync = async (app) => {
 
   // PUT /settings - update user settings
   app.put<{ Body: Partial<UserSettings> }>("/", async (request, reply) => {
-    const { scanBudget, taskBudget, planBudget } = request.body;
+    const { scanBudget, taskBudget, planBudget, defaultAgent, agentModels } = request.body;
 
     // Validate budgets are positive numbers
     const updates: UserSettings = {};
+    if (defaultAgent !== undefined) {
+      if (typeof defaultAgent !== "string" || !defaultAgent.trim()) {
+        return reply.code(400).send({ error: { message: "defaultAgent must be a non-empty string" } });
+      }
+      updates.defaultAgent = defaultAgent;
+    }
     if (scanBudget !== undefined) {
       if (typeof scanBudget !== "number" || scanBudget <= 0 || scanBudget > 100) {
         return reply.code(400).send({ error: { message: "scanBudget must be between 0.01 and 100" } });
@@ -63,6 +73,12 @@ export const settingsRoutes: FastifyPluginAsync = async (app) => {
       }
       updates.planBudget = planBudget;
     }
+    if (agentModels !== undefined) {
+      if (typeof agentModels !== "object" || agentModels === null || Array.isArray(agentModels)) {
+        return reply.code(400).send({ error: { message: "agentModels must be an object" } });
+      }
+      updates.agentModels = agentModels;
+    }
 
     const user = await prisma.user.findUnique({
       where: { id: request.userId },
@@ -70,6 +86,10 @@ export const settingsRoutes: FastifyPluginAsync = async (app) => {
     });
 
     const currentSettings = (user?.settings as UserSettings) || {};
+    // Merge agentModels per-key instead of overwriting entirely
+    if (updates.agentModels && currentSettings.agentModels) {
+      updates.agentModels = { ...currentSettings.agentModels, ...updates.agentModels };
+    }
     const newSettings = { ...currentSettings, ...updates };
 
     await prisma.user.update({

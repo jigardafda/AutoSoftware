@@ -28,7 +28,7 @@ import { toast } from "sonner";
 
 interface TerminalLine {
   timestamp: number;
-  stream: "stdout" | "stderr";
+  stream: "stdout" | "stderr" | "stdin";
   data: string;
   sequence: number;
 }
@@ -151,9 +151,18 @@ export function TerminalOutput({
   }, [onLine, isPaused]);
 
   // Write new lines from props
+  const prevLinesLenRef = useRef(0);
   useEffect(() => {
     const terminal = terminalRef.current;
     if (!terminal) return;
+
+    // Detect full replacement (lines array shrunk or reset)
+    if (lines.length < prevLinesLenRef.current || (lines.length > 0 && lines[0].sequence <= 1 && lastSequenceRef.current > 1)) {
+      terminal.clear();
+      lastSequenceRef.current = -1;
+      pausedLinesRef.current = [];
+    }
+    prevLinesLenRef.current = lines.length;
 
     const newLines = lines.filter((line) => line.sequence > lastSequenceRef.current);
     if (newLines.length === 0) return;
@@ -199,7 +208,9 @@ export function TerminalOutput({
     const prefix =
       line.stream === "stderr"
         ? "\x1b[31m[ERR]\x1b[0m"
-        : "\x1b[90m[OUT]\x1b[0m";
+        : line.stream === "stdin"
+          ? "\x1b[33m[CMD]\x1b[0m"
+          : "\x1b[90m[OUT]\x1b[0m";
 
     // Handle multi-line output
     const lines = line.data.split("\n");

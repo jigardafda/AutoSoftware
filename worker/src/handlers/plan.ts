@@ -107,10 +107,12 @@ export async function handleTaskPlanning(jobs: { data: { taskId: string } }[]) {
 
   // Set up auth for Agent SDK
   setupAgentSdkAuth(auth);
-  console.log(`Using ${auth.authType === "oauth" ? "OAuth token" : "API key"} for planning`);
+  const authLabel = auth.authType === "cli" ? "CLI auth" : auth.authType === "oauth" ? "OAuth token" : "API key";
+  console.log(`Using ${authLabel} for planning`);
 
-  const account = repo.user.accounts.find((a: any) => a.provider === repo.provider);
-  if (!account) {
+  const isLocalRepo = repo.provider === "local";
+  const account = isLocalRepo ? null : repo.user.accounts.find((a: any) => a.provider === repo.provider);
+  if (!isLocalRepo && !account) {
     await prisma.task.update({
       where: { id: taskId },
       data: {
@@ -123,15 +125,21 @@ export async function handleTaskPlanning(jobs: { data: { taskId: string } }[]) {
 
   try {
     // Clone/pull repo (read-only, no worktree needed for planning)
-    const repoDir = await cloneOrPullRepo(repo.id, repo.cloneUrl, account.accessToken, repo.provider);
+    const repoDir = isLocalRepo
+      ? repo.cloneUrl
+      : await cloneOrPullRepo(repo.id, repo.cloneUrl, account!.accessToken, repo.provider);
 
     // Checkout the target branch so planning sees the correct code state
     const targetBranch = task.targetBranch || repo.defaultBranch;
     const git = simpleGit(repoDir);
     try {
-      await git.fetch("origin", targetBranch);
-      await git.checkout(`origin/${targetBranch}`);
-      console.log(`Planning: checked out origin/${targetBranch}`);
+      if (!isLocalRepo) {
+        await git.fetch("origin", targetBranch);
+        await git.checkout(`origin/${targetBranch}`);
+      } else {
+        await git.checkout(targetBranch);
+      }
+      console.log(`Planning: checked out ${isLocalRepo ? "" : "origin/"}${targetBranch}`);
     } catch (err) {
       console.warn(`Failed to checkout ${targetBranch}, falling back to current HEAD:`, err);
     }

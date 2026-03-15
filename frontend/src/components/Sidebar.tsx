@@ -16,8 +16,11 @@ import {
   Puzzle,
   BarChart3,
   X,
-  Users,
-  Zap,
+  LayoutGrid,
+  GitPullRequestArrow,
+  LinkIcon,
+  Github,
+  Gitlab,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
@@ -39,6 +42,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -46,8 +56,8 @@ const navItems = [
   { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/repos", label: "Repositories", icon: GitBranch },
   { to: "/tasks", label: "Tasks", icon: CheckCircle2 },
-  { to: "/triggers", label: "Triggers", icon: Zap },
-  { to: "/team", label: "Team", icon: Users },
+  { to: "/workspaces", label: "Workspaces", icon: LayoutGrid },
+  { to: "/reviews", label: "Reviews", icon: GitPullRequestArrow },
   { to: "/scans", label: "Scans", icon: Search },
   { to: "/activity", label: "Activity", icon: Activity },
   { to: "/queues", label: "Queues", icon: Layers },
@@ -74,10 +84,11 @@ export function Sidebar({ mobile = false, onClose }: SidebarProps) {
     }
     return false;
   });
+  const [connectDialogOpen, setConnectDialogOpen] = useState(false);
 
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, localMode } = useAuth();
 
   useEffect(() => {
     if (!mobile) {
@@ -92,6 +103,7 @@ export function Sidebar({ mobile = false, onClose }: SidebarProps) {
     }
   };
 
+  const displayName = user?.name ?? user?.email ?? (localMode ? "Local User" : null);
   const initials = user?.name
     ? user.name
         .split(" ")
@@ -99,7 +111,7 @@ export function Sidebar({ mobile = false, onClose }: SidebarProps) {
         .join("")
         .toUpperCase()
         .slice(0, 2)
-    : user?.email?.charAt(0).toUpperCase() ?? "?";
+    : user?.email?.charAt(0).toUpperCase() ?? (localMode ? "L" : "?");
 
   // In mobile mode, always expanded
   const isCollapsed = mobile ? false : collapsed;
@@ -297,11 +309,16 @@ export function Sidebar({ mobile = false, onClose }: SidebarProps) {
               {!isCollapsed && (
                 <div className="flex-1 min-w-0 text-left">
                   <p className="truncate text-sm font-medium text-foreground">
-                    {user?.name ?? user?.email}
+                    {displayName}
                   </p>
-                  {user?.name && (
+                  {user?.name && user.email && (
                     <p className="truncate text-xs text-muted-foreground">
                       {user.email}
+                    </p>
+                  )}
+                  {!user && localMode && (
+                    <p className="truncate text-xs text-muted-foreground">
+                      Not signed in
                     </p>
                   )}
                 </div>
@@ -314,9 +331,12 @@ export function Sidebar({ mobile = false, onClose }: SidebarProps) {
             className="w-56"
           >
             <div className="px-2 py-1.5">
-              <p className="text-sm font-medium">{user?.name ?? user?.email}</p>
-              {user?.name && (
+              <p className="text-sm font-medium">{displayName}</p>
+              {user?.name && user.email && (
                 <p className="text-xs text-muted-foreground">{user.email}</p>
+              )}
+              {!user && localMode && (
+                <p className="text-xs text-muted-foreground">Not signed in</p>
               )}
             </div>
             <DropdownMenuSeparator />
@@ -329,16 +349,114 @@ export function Sidebar({ mobile = false, onClose }: SidebarProps) {
               Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => { void logout(); handleNavClick(); }}
-              className="text-destructive focus:text-destructive"
-            >
-              <LogOut className="h-4 w-4" />
-              Sign out
+            <DropdownMenuItem onClick={() => { setConnectDialogOpen(true); handleNavClick(); }}>
+              <LinkIcon className="h-4 w-4" />
+              Connect Account
             </DropdownMenuItem>
+            {user && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => { void logout(); handleNavClick(); }}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign out
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {/* Connect Account Dialog */}
+      <ConnectAccountDialog
+        open={connectDialogOpen}
+        onOpenChange={setConnectDialogOpen}
+        localMode={localMode}
+      />
     </aside>
+  );
+}
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5002";
+
+function ConnectAccountDialog({
+  open,
+  onOpenChange,
+  localMode,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  localMode: boolean;
+}) {
+  const providers = [
+    {
+      id: "github",
+      name: "GitHub",
+      icon: <Github className="h-5 w-5" />,
+      color: "bg-gray-900 text-white dark:bg-white dark:text-gray-900",
+    },
+    {
+      id: "gitlab",
+      name: "GitLab",
+      icon: <Gitlab className="h-5 w-5" />,
+      color: "bg-orange-600 text-white",
+    },
+    {
+      id: "bitbucket",
+      name: "Bitbucket",
+      icon: (
+        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M2.65 3C2.3 3 2 3.3 2 3.65v.12l2.73 16.5c.07.42.43.73.85.73h13.05c.32 0 .6-.22.66-.53L22 3.77v-.12c0-.35-.3-.65-.65-.65H2.65zM14.1 14.95H9.9L8.72 9.05h6.56l-1.18 5.9z" />
+        </svg>
+      ),
+      color: "bg-blue-600 text-white",
+    },
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Connect Account</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-4">
+          <p className="text-sm text-muted-foreground mb-4">
+            {localMode
+              ? "Account linking will be available in the cloud version. You can use PATs or CLI tools for now."
+              : "Link a provider account to enable OAuth-based repo access and PR reviews."}
+          </p>
+          {providers.map((provider) => (
+            <div key={provider.id}>
+              {localMode ? (
+                <div className="flex items-center justify-between rounded-lg border border-border/50 px-4 py-3 opacity-70">
+                  <div className="flex items-center gap-3">
+                    <div className={cn("flex items-center justify-center rounded-md h-9 w-9", provider.color)}>
+                      {provider.icon}
+                    </div>
+                    <span className="text-sm font-medium">{provider.name}</span>
+                  </div>
+                  <Badge variant="secondary" className="text-xs">Coming Soon</Badge>
+                </div>
+              ) : (
+                <a
+                  href={`${BACKEND_URL}/api/auth/login/${provider.id}`}
+                  className="flex items-center justify-between rounded-lg border border-border/50 px-4 py-3 hover:bg-accent transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={cn("flex items-center justify-center rounded-md h-9 w-9", provider.color)}>
+                      {provider.icon}
+                    </div>
+                    <span className="text-sm font-medium">{provider.name}</span>
+                  </div>
+                  <Button variant="outline" size="sm">Connect</Button>
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

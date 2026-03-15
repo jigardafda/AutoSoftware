@@ -39,9 +39,15 @@ import { canvasRoutes } from "./routes/canvas.js";
 import { personalizationRoutes } from "./routes/personalization.js";
 import { triggerRoutes } from "./routes/triggers.js";
 import { aiMetricsRoutes } from "./routes/ai-metrics.js";
+import { agentRoutes } from "./routes/agents.js";
+import { workspaceRoutes } from "./routes/workspaces.js";
+import { reviewRoutes } from "./routes/reviews.js";
 import { schedulerService } from "./services/scheduler.js";
+import { agentRegistry } from "./services/acp/agent-registry.js";
+import { sessionPool } from "./services/acp/acp-session.js";
 import { registerWebSocket } from "./websocket/index.js";
 import { initTerminalStream, shutdownTerminalStream } from "./websocket/terminal-stream.js";
+import { registerPreviewProxy } from "./services/browser-preview/preview-proxy.js";
 
 // Register integration adapters
 import "./services/integrations/index.js";
@@ -51,7 +57,10 @@ const pool = new Pool({
   connectionString: config.databaseUrl,
 });
 
-const app = Fastify({ logger: true });
+const app = Fastify({
+  logger: process.env.IS_BUNDLED !== "1",
+  bodyLimit: 20 * 1024 * 1024, // 20MB for image attachments
+});
 
 await app.register(cors, {
   origin: config.frontendUrl,
@@ -64,6 +73,25 @@ await app.register(cookie, {
 });
 
 app.decorateRequest("userId", "");
+app.decorateRequest("isLocalAuth", false);
+
+// In local/CLI mode, auto-create a local user and bypass auth
+const isLocalMode = process.env.IS_BUNDLED === "1";
+let localUserId: string | null = null;
+
+if (isLocalMode) {
+  try {
+    const localUser = await prisma.user.upsert({
+      where: { email: "local@autosoftware.app" },
+      create: { email: "local@autosoftware.app", name: "Local User" },
+      update: {},
+    });
+    localUserId = localUser.id;
+  } catch {
+    // DB may not be ready yet — will be set later
+  }
+}
+
 app.addHook("preHandler", async (request) => {
   const token = request.cookies.session_token;
   if (token) {
@@ -71,6 +99,11 @@ app.addHook("preHandler", async (request) => {
     if (unsigned.valid && unsigned.value) {
       request.userId = unsigned.value;
     }
+  }
+  // In local mode, fall back to the local user if no session
+  if (!request.userId && isLocalMode && localUserId) {
+    request.userId = localUserId;
+    (request as any).isLocalAuth = true;
   }
 });
 
@@ -125,9 +158,121 @@ await app.register(canvasRoutes, { prefix: "/api/canvas" });
 await app.register(personalizationRoutes, { prefix: "/api/personalization" });
 await app.register(triggerRoutes, { prefix: "/api/triggers" });
 await app.register(aiMetricsRoutes, { prefix: "/api/ai-metrics" });
+await app.register(agentRoutes, { prefix: "/api/agents" });
+await app.register(workspaceRoutes, { prefix: "/api/workspaces" });
+await app.register(reviewRoutes, { prefix: "/api/reviews" });
 await app.register(embedRoutes, { prefix: "/embed" });
 
+// Register browser preview proxy (local mode only)
+registerPreviewProxy(app);
+
 app.get("/api/health", async () => ({ status: "ok" }));
+
+// Filesystem browse endpoint — for local folder selection in CLI mode
+app.get<{ Querystring: { path?: string } }>("/api/filesystem/browse", async (request, reply) => {
+  const targetPath = request.query.path || process.env.HOME || "/";
+  const { resolve, join } = await import("path");
+  const { readdir, stat, access: fsAccess } = await import("fs/promises");
+
+  const resolved = resolve(targetPath);
+
+  try {
+    await fsAccess(resolved);
+  } catch {
+    return reply.code(404).send({ error: { message: "Path not found" } });
+  }
+
+  const info = await stat(resolved);
+  if (!info.isDirectory()) {
+    return reply.code(400).send({ error: { message: "Path is not a directory" } });
+  }
+
+  // Check if this directory is a git repo
+  let isGitRepo = false;
+  try {
+    await fsAccess(join(resolved, ".git"));
+    isGitRepo = true;
+  } catch {}
+
+  // List directory entries
+  const entries = await readdir(resolved, { withFileTypes: true });
+  const dirs = entries
+    .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((e) => {
+      const fullPath = join(resolved, e.name);
+      // Quick git check for each subdirectory
+      let childIsGit = false;
+      try {
+        const { accessSync } = require("fs");
+        accessSync(join(fullPath, ".git"));
+        childIsGit = true;
+      } catch {}
+      return { name: e.name, path: fullPath, isGitRepo: childIsGit };
+    });
+
+  // Get parent path
+  const parentPath = resolve(resolved, "..");
+
+  return {
+    path: resolved,
+    parent: parentPath !== resolved ? parentPath : null,
+    isGitRepo,
+    entries: dirs,
+  };
+});
+
+// List branches for a local git repo path
+app.get<{ Querystring: { path: string } }>("/api/filesystem/branches", async (request, reply) => {
+  const targetPath = request.query.path;
+  if (!targetPath) {
+    return reply.code(400).send({ error: { message: "Query parameter 'path' is required" } });
+  }
+
+  const { resolve, join } = await import("path");
+  const { access: fsAccess } = await import("fs/promises");
+  const resolved = resolve(targetPath);
+
+  try {
+    await fsAccess(join(resolved, ".git"));
+  } catch {
+    return reply.code(400).send({ error: { message: "Not a git repository" } });
+  }
+
+  try {
+    const { simpleGit } = await import("simple-git");
+    const git = simpleGit(resolved);
+    const branchSummary = await git.branch();
+    const branches = branchSummary.all
+      .filter((name) => !name.startsWith("remotes/"))
+      .map((name) => ({
+        name,
+        isDefault: name === branchSummary.current,
+      }))
+      .sort((a, b) => {
+        if (a.isDefault) return -1;
+        if (b.isDefault) return 1;
+        return a.name.localeCompare(b.name);
+      });
+    return { data: branches };
+  } catch (err: any) {
+    return reply.code(500).send({ error: { message: `Failed to list branches: ${err.message}` } });
+  }
+});
+
+// Config endpoint — tells the frontend if we're running in local/CLI mode
+app.get("/api/config", async () => ({
+  localMode: process.env.IS_BUNDLED === "1",
+}));
+
+// Detect available coding agents (non-blocking)
+try {
+  const detectedAgents = await agentRegistry.detectAll();
+  const availableCount = detectedAgents.filter((a) => a.available).length;
+  console.log(`Agent registry: ${availableCount}/${detectedAgents.length} agents available`);
+} catch (err) {
+  console.warn("Agent detection failed:", err);
+}
 
 // Only start scheduler if DATABASE_URL is available
 try {
@@ -141,6 +286,7 @@ console.log(`Backend running on port ${config.port}`);
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, async () => {
+    await sessionPool.stopAll();
     await schedulerService.stop();
     await shutdownTerminalStream();
     await pool.end();

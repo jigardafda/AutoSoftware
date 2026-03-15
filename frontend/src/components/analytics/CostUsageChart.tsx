@@ -10,9 +10,7 @@ import {
   Cell,
   PieChart,
   Pie,
-  Legend,
 } from 'recharts';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { api } from '@/lib/api';
 import { useState } from 'react';
@@ -24,321 +22,262 @@ interface CostUsageChartProps {
 
 type ViewMode = 'timeline' | 'byModel' | 'byTokenType' | 'bySource';
 
-const MODEL_COLORS = [
-  'oklch(0.65 0.18 195)', // Primary teal
-  'oklch(0.65 0.18 145)', // Green
-  'oklch(0.60 0.22 25)',  // Red
-  'oklch(0.70 0.15 85)',  // Yellow
-  'oklch(0.60 0.18 290)', // Purple
-  'oklch(0.65 0.15 45)',  // Orange
+const CHART_COLORS = [
+  '#06b6d4', // cyan
+  '#8b5cf6', // violet
+  '#f59e0b', // amber
+  '#10b981', // emerald
+  '#ec4899', // pink
+  '#3b82f6', // blue
 ];
+
+function CustomTooltip({ active, payload, label, formatter }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl border border-border/60 bg-popover/95 backdrop-blur-lg px-4 py-3 shadow-2xl shadow-black/20">
+      {label && <p className="text-xs font-semibold text-muted-foreground mb-2">{label}</p>}
+      <div className="space-y-1.5">
+        {payload.map((entry: any, i: number) => {
+          const [val, name] = formatter ? formatter(entry.value, entry.name) : [entry.value, entry.name];
+          return (
+            <div key={i} className="flex items-center gap-2 text-sm">
+              <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: entry.color || entry.fill }} />
+              <span className="text-muted-foreground">{name}</span>
+              <span className="ml-auto font-semibold tabular-nums">{val}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export function CostUsageChart({ dateRange }: CostUsageChartProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('timeline');
 
   const { data: costData, isLoading } = useQuery({
     queryKey: ['analytics', 'costs', dateRange],
-    queryFn: () => api.analytics.getCosts({
-      ...dateRange,
-      groupBy: 'day',
-    }),
+    queryFn: () => api.analytics.getCosts({ ...dateRange, groupBy: 'day' }),
   });
 
   const viewModes: { value: ViewMode; label: string }[] = [
     { value: 'timeline', label: 'Timeline' },
     { value: 'byModel', label: 'By Model' },
-    { value: 'byTokenType', label: 'Token Usage' },
+    { value: 'byTokenType', label: 'Tokens' },
     { value: 'bySource', label: 'By Source' },
   ];
 
   if (isLoading) {
     return (
-      <Card className="flex flex-col">
-        <CardHeader className="p-4 pb-0">
-          <Skeleton className="h-5 w-32" />
-        </CardHeader>
-        <CardContent className="p-4 pt-4 flex-1">
-          <Skeleton className="h-[280px]" />
-        </CardContent>
-      </Card>
+      <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm p-6">
+        <Skeleton className="h-5 w-36 mb-6" />
+        <Skeleton className="h-[300px] rounded-xl" />
+      </div>
     );
   }
 
-  const timelineData = (costData?.timeline || []).map(item => ({
-    ...item,
-    date: item.date.slice(5), // "MM-DD" format
+  const timelineData = (costData?.timeline || []).map((item: any) => ({
+    ...item, date: item.date.slice(5),
   }));
-
   const modelData = costData?.byModel || [];
   const tokenData = costData?.byTokenType || [];
-  const sourceData = costData?.bySource || [];
-  const timelineByToken = (costData?.timelineByToken || []).map(item => ({
-    ...item,
-    date: item.date.slice(5), // "MM-DD" format
+  const timelineByToken = (costData?.timelineByToken || []).map((item: any) => ({
+    ...item, date: item.date.slice(5),
   }));
-  const timelineBySource = (costData?.timelineBySource || []).map(item => ({
-    ...item,
-    date: item.date.slice(5), // "MM-DD" format
+  const timelineBySource = (costData?.timelineBySource || []).map((item: any) => ({
+    ...item, date: item.date.slice(5),
   }));
   const sourceLabels = costData?.sourceLabels || {};
   const sources = costData?.sources || [];
 
+  const totalModelCost = modelData.reduce((s: number, m: any) => s + (m.cost || 0), 0);
+  const totalTokens = tokenData.reduce((s: number, t: any) => s + t.tokens, 0);
+  const noData = timelineData.length === 0 && modelData.length === 0 && sources.length === 0;
+
   const renderChart = () => {
+    if (noData) {
+      return (
+        <div className="flex h-[300px] items-center justify-center">
+          <div className="text-center">
+            <p className="text-sm text-muted-foreground">No cost data available</p>
+            <p className="text-xs text-muted-foreground/60 mt-1">Usage data will appear here</p>
+          </div>
+        </div>
+      );
+    }
+
     switch (viewMode) {
       case 'timeline':
         return (
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={timelineData}>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={timelineData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
               <defs>
-                <linearGradient id="costBarFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="oklch(0.65 0.18 195)" stopOpacity={0.9} />
-                  <stop offset="95%" stopColor="oklch(0.65 0.18 195)" stopOpacity={0.6} />
+                <linearGradient id="costBarGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#06b6d4" stopOpacity={0.9} />
+                  <stop offset="100%" stopColor="#06b6d4" stopOpacity={0.5} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.01 250)" />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 11, fill: "oklch(0.55 0.01 250)" }}
-                tickLine={false}
-                axisLine={false}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                tick={{ fontSize: 11, fill: "oklch(0.55 0.01 250)" }}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(value) => `$${value}`}
-                width={50}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "oklch(0.15 0.01 250)",
-                  border: "1px solid oklch(0.25 0.015 250)",
-                  borderRadius: "10px",
-                  fontSize: 12,
-                  color: "oklch(0.95 0 0)",
-                }}
-                formatter={(value) => [`$${Number(value).toFixed(4)}`, 'Cost']}
-              />
-              <Bar
-                dataKey="cost"
-                fill="url(#costBarFill)"
-                radius={[4, 4, 0, 0]}
-              />
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.4} vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" tickFormatter={(v) => `$${v}`} width={50} />
+              <Tooltip content={<CustomTooltip formatter={(v: number) => [`$${v.toFixed(4)}`, 'Cost']} />} />
+              <Bar dataKey="cost" fill="url(#costBarGrad)" radius={[6, 6, 0, 0]} animationDuration={800} />
             </BarChart>
           </ResponsiveContainer>
         );
 
       case 'byModel':
         return (
-          <ResponsiveContainer width="100%" height={280}>
-            <PieChart>
-              <Pie
-                data={modelData}
-                cx="50%"
-                cy="45%"
-                innerRadius={60}
-                outerRadius={90}
-                paddingAngle={3}
-                dataKey="cost"
-                nameKey="model"
-                stroke="none"
-              >
-                {modelData.map((_, index) => (
-                  <Cell
-                    key={`cell-${index}`}
-                    fill={MODEL_COLORS[index % MODEL_COLORS.length]}
-                  />
-                ))}
-              </Pie>
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "oklch(0.15 0.01 250)",
-                  border: "1px solid oklch(0.25 0.015 250)",
-                  borderRadius: "10px",
-                  fontSize: 12,
-                  color: "oklch(0.95 0 0)",
-                }}
-                formatter={(value, name) => [
-                  `$${Number(value).toFixed(4)} (${modelData.find(m => m.model === name)?.percentage.toFixed(1)}%)`,
-                  String(name)
-                ]}
-              />
-              <Legend
-                verticalAlign="bottom"
-                iconSize={8}
-                formatter={(value: string) => (
-                  <span className="text-xs text-muted-foreground">{value}</span>
-                )}
-              />
-            </PieChart>
-          </ResponsiveContainer>
+          <div className="flex flex-col items-center">
+            <div className="relative w-full" style={{ height: 240 }}>
+              <ResponsiveContainer width="100%" height={240}>
+                <PieChart>
+                  <Pie
+                    data={modelData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={65}
+                    outerRadius={95}
+                    paddingAngle={4}
+                    dataKey="cost"
+                    nameKey="model"
+                    stroke="none"
+                    cornerRadius={4}
+                    animationDuration={800}
+                    label={false}
+                  >
+                    {modelData.map((_: any, i: number) => (
+                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<CustomTooltip formatter={(v: number, name: string) => {
+                    const pct = modelData.find((m: any) => m.model === name)?.percentage || 0;
+                    return [`$${v.toFixed(4)} (${pct.toFixed(1)}%)`, name];
+                  }} />} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="text-center">
+                  <div className="text-xl font-bold">${totalModelCost.toFixed(2)}</div>
+                  <div className="text-[10px] font-medium text-muted-foreground">Total Cost</div>
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap justify-center gap-x-5 gap-y-1.5 mt-2">
+              {modelData.map((m: any, i: number) => (
+                <div key={m.model} className="flex items-center gap-1.5">
+                  <div className="h-2 w-2 rounded-full" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
+                  <span className="text-[11px] text-muted-foreground">{m.model}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         );
 
-      case 'byTokenType':
-        // Daily stacked bar chart for token usage
-        const totalTokens = tokenData.reduce((sum, t) => sum + t.tokens, 0);
-
+      case 'byTokenType': {
         if (timelineByToken.length === 0) {
           return (
-            <div className="h-[280px] flex items-center justify-center">
+            <div className="flex h-[300px] items-center justify-center">
               <p className="text-sm text-muted-foreground">No token data available</p>
             </div>
           );
         }
-
+        const formatTokens = (v: number) =>
+          v >= 1_000_000 ? `${(v / 1_000_000).toFixed(2)}M` : v >= 1_000 ? `${(v / 1_000).toFixed(1)}K` : String(v);
         return (
-          <div className="h-[280px] flex flex-col">
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={timelineByToken}>
-                <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.01 250)" />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 11, fill: "oklch(0.55 0.01 250)" }}
-                  tickLine={false}
-                  axisLine={false}
-                  interval="preserveStartEnd"
-                />
-                <YAxis
-                  tick={{ fontSize: 11, fill: "oklch(0.55 0.01 250)" }}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(value) => value >= 1000000 ? `${(value / 1000000).toFixed(1)}M` : value >= 1000 ? `${(value / 1000).toFixed(0)}K` : value}
-                  width={50}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "oklch(0.15 0.01 250)",
-                    border: "1px solid oklch(0.25 0.015 250)",
-                    borderRadius: "10px",
-                    fontSize: 12,
-                    color: "oklch(0.95 0 0)",
-                  }}
-                  formatter={(value: number, name: string) => [
-                    value >= 1000000 ? `${(value / 1000000).toFixed(2)}M` : value >= 1000 ? `${(value / 1000).toFixed(1)}K` : value,
-                    `${name} tokens`
-                  ]}
-                />
-                <Bar dataKey="input" stackId="tokens" fill={MODEL_COLORS[0]} name="Input" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="output" stackId="tokens" fill={MODEL_COLORS[4]} name="Output" radius={[4, 4, 0, 0]} />
+          <div>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={timelineByToken} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.4} vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" interval="preserveStartEnd" />
+                <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" tickFormatter={formatTokens} width={50} />
+                <Tooltip content={<CustomTooltip formatter={(v: number, name: string) => [formatTokens(v), `${name} tokens`]} />} />
+                <Bar dataKey="input" stackId="tokens" fill="#06b6d4" name="Input" radius={[0, 0, 0, 0]} animationDuration={800} />
+                <Bar dataKey="output" stackId="tokens" fill="#8b5cf6" name="Output" radius={[6, 6, 0, 0]} animationDuration={1000} />
               </BarChart>
             </ResponsiveContainer>
-            <div className="flex justify-center gap-6 mt-2">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: MODEL_COLORS[0] }} />
-                <span className="text-xs text-muted-foreground">Input: {(tokenData[0]?.tokens / 1000000 || 0).toFixed(2)}M</span>
+            <div className="flex justify-center gap-6 mt-3">
+              <div className="flex items-center gap-1.5">
+                <div className="h-2 w-5 rounded-full bg-cyan-500" />
+                <span className="text-[11px] text-muted-foreground">Input: {formatTokens(tokenData[0]?.tokens || 0)}</span>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: MODEL_COLORS[4] }} />
-                <span className="text-xs text-muted-foreground">Output: {(tokenData[1]?.tokens / 1000000 || 0).toFixed(2)}M</span>
+              <div className="flex items-center gap-1.5">
+                <div className="h-2 w-5 rounded-full bg-violet-500" />
+                <span className="text-[11px] text-muted-foreground">Output: {formatTokens(tokenData[1]?.tokens || 0)}</span>
               </div>
-              <span className="text-xs font-semibold">Total: {(totalTokens / 1000000).toFixed(2)}M</span>
+              <span className="text-[11px] font-semibold">Total: {formatTokens(totalTokens)}</span>
             </div>
           </div>
         );
+      }
 
-      case 'bySource':
-        // Daily stacked bar chart for cost by source
-        const totalSourceCost = sourceData.reduce((sum, s) => sum + (s.cost || 0), 0);
-
+      case 'bySource': {
         if (timelineBySource.length === 0) {
           return (
-            <div className="h-[280px] flex items-center justify-center">
+            <div className="flex h-[300px] items-center justify-center">
               <p className="text-sm text-muted-foreground">No source data available</p>
             </div>
           );
         }
-
         return (
-          <div className="h-[280px] flex flex-col">
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={timelineBySource}>
-                <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.01 250)" />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 11, fill: "oklch(0.55 0.01 250)" }}
-                  tickLine={false}
-                  axisLine={false}
-                  interval="preserveStartEnd"
-                />
-                <YAxis
-                  tick={{ fontSize: 11, fill: "oklch(0.55 0.01 250)" }}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(value) => `$${value}`}
-                  width={50}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "oklch(0.15 0.01 250)",
-                    border: "1px solid oklch(0.25 0.015 250)",
-                    borderRadius: "10px",
-                    fontSize: 12,
-                    color: "oklch(0.95 0 0)",
-                  }}
-                  formatter={(value: number, name: string) => [
-                    `$${value.toFixed(4)}`,
-                    sourceLabels[name] || name
-                  ]}
-                />
-                {sources.map((source, index) => (
+          <div>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={timelineBySource} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.4} vertical={false} />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" interval="preserveStartEnd" />
+                <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} className="fill-muted-foreground" tickFormatter={(v) => `$${v}`} width={50} />
+                <Tooltip content={<CustomTooltip formatter={(v: number, name: string) => [`$${v.toFixed(4)}`, sourceLabels[name] || name]} />} />
+                {sources.map((source: string, i: number) => (
                   <Bar
                     key={source}
                     dataKey={source}
                     stackId="cost"
-                    fill={MODEL_COLORS[index % MODEL_COLORS.length]}
+                    fill={CHART_COLORS[i % CHART_COLORS.length]}
                     name={sourceLabels[source] || source}
-                    radius={index === sources.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                    radius={i === sources.length - 1 ? [6, 6, 0, 0] : [0, 0, 0, 0]}
+                    animationDuration={800 + i * 100}
                   />
                 ))}
               </BarChart>
             </ResponsiveContainer>
-            <div className="flex flex-wrap justify-center gap-4 mt-2 px-2">
-              {sources.map((source, index) => (
-                <div key={source} className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: MODEL_COLORS[index % MODEL_COLORS.length] }} />
-                  <span className="text-xs text-muted-foreground">{sourceLabels[source] || source}</span>
+            <div className="flex flex-wrap justify-center gap-x-5 gap-y-1.5 mt-3">
+              {sources.map((source: string, i: number) => (
+                <div key={source} className="flex items-center gap-1.5">
+                  <div className="h-2 w-2 rounded-full" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
+                  <span className="text-[11px] text-muted-foreground">{sourceLabels[source] || source}</span>
                 </div>
               ))}
-              <span className="text-xs font-semibold">Total: ${totalSourceCost.toFixed(2)}</span>
             </div>
           </div>
         );
+      }
     }
   };
 
   return (
-    <Card className="flex flex-col">
-      <CardHeader className="p-4 pb-0">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm">Cost & Token Usage</CardTitle>
-          <div className="flex gap-1 p-1 bg-muted/50 rounded-lg">
-            {viewModes.map(mode => (
-              <button
-                key={mode.value}
-                onClick={() => setViewMode(mode.value)}
-                className={cn(
-                  "px-2.5 py-1 text-xs font-medium rounded-md transition-colors",
-                  viewMode === mode.value
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {mode.label}
-              </button>
-            ))}
-          </div>
+    <div className="rounded-2xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden">
+      <div className="flex items-center justify-between px-6 pt-5 pb-2">
+        <h3 className="text-sm font-semibold">Cost & Token Usage</h3>
+        <div className="flex gap-0.5 p-0.5 bg-muted/60 rounded-lg">
+          {viewModes.map(mode => (
+            <button
+              key={mode.value}
+              onClick={() => setViewMode(mode.value)}
+              className={cn(
+                "px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200",
+                viewMode === mode.value
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {mode.label}
+            </button>
+          ))}
         </div>
-      </CardHeader>
-      <CardContent className="p-4 pt-4 flex-1">
-        {timelineData.length === 0 && modelData.length === 0 && sourceData.length === 0 ? (
-          <div className="flex h-[280px] items-center justify-center">
-            <p className="text-sm text-muted-foreground">No cost data available</p>
-          </div>
-        ) : (
-          renderChart()
-        )}
-      </CardContent>
-    </Card>
+      </div>
+      <div className="px-4 pb-4 pt-2">
+        {renderChart()}
+      </div>
+    </div>
   );
 }

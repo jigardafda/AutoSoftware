@@ -54,7 +54,7 @@ export const schedulerService = {
         where: { id: repoId },
         select: { defaultBranch: true },
       });
-      targetBranch = repo?.defaultBranch || "main";
+      targetBranch = repo?.defaultBranch ?? "main";
     }
 
     // Create scan record immediately with queued status and branch

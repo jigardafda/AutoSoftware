@@ -24,19 +24,24 @@ import Canvas from "./pages/Canvas";
 import Notifications from "./pages/Notifications";
 import { Team } from "./pages/Team";
 import { Triggers } from "./pages/Triggers";
+import { Workspaces } from "./pages/Workspaces";
+import { WorkspaceDetail } from "./pages/WorkspaceDetail";
+import { Reviews } from "./pages/Reviews";
+import { ReviewDetail } from "./pages/ReviewDetail";
 import { CommandPalette } from "./components/CommandPalette";
 import { Toaster } from "./components/ui/sonner";
 
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, localMode } = useAuth();
   if (loading) return (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
       <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
     </div>
   );
-  if (!user) return <Navigate to="/login" />;
+  // In local mode, never redirect to login — show the app directly
+  if (!user && !localMode) return <Navigate to="/login" />;
   return <>{children}</>;
 }
 
@@ -57,6 +62,10 @@ function AppRoutes() {
           <Route path="/repos/:id" element={<RepoDetail />} />
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/tasks/:id" element={<TaskDetail />} />
+          <Route path="/workspaces" element={<Workspaces />} />
+          <Route path="/workspaces/:id" element={<WorkspaceDetail />} />
+          <Route path="/reviews" element={<Reviews />} />
+          <Route path="/reviews/:id" element={<ReviewDetail />} />
           <Route path="/scans" element={<Scans />} />
           <Route path="/scans/:id" element={<ScanDetail />} />
           <Route path="/activity" element={<Activity />} />

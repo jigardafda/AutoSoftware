@@ -127,6 +127,7 @@ export interface UpdateRepoInput {
   scanInterval?: number;
   defaultBranch?: string;
   settings?: Record<string, unknown>;
+  devServerScript?: string | null;
 }
 
 // --- Project types ---

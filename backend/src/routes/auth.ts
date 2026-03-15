@@ -1,10 +1,13 @@
 import type { FastifyPluginAsync } from "fastify";
 import crypto from "crypto";
+import { execFile, spawn } from "child_process";
+import { promisify } from "util";
 import { prisma } from "../db.js";
 import { config } from "../config.js";
 import { getAuthUrl, exchangeCode, getUserInfo } from "../services/oauth.js";
 import type { OAuthProvider } from "@autosoftware/shared";
 
+const execFileAsync = promisify(execFile);
 const validProviders = new Set(["github", "gitlab", "bitbucket"]);
 
 // Flow types for OAuth
@@ -260,7 +263,8 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   );
 
   app.get("/me", async (request, reply) => {
-    if (!request.userId) {
+    // In local mode with no real session, return 401 so the frontend shows "not signed in"
+    if (!request.userId || (request as any).isLocalAuth) {
       return reply.code(401).send({ error: { message: "Unauthorized" } });
     }
 
@@ -287,6 +291,109 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
   app.post("/logout", async (request, reply) => {
     reply.clearCookie("session_token", { path: "/" });
     return { data: { success: true } };
+  });
+
+  // ── GitHub CLI Auth ──
+
+  // Check if gh CLI is authenticated
+  app.get("/github-status", async (_request, reply) => {
+    // 1. Check if gh CLI is even installed
+    try {
+      await execFileAsync("which", ["gh"], { timeout: 3000 });
+    } catch {
+      return { data: { installed: false, authenticated: false, username: null } };
+    }
+
+    // 2. Check if gh is authenticated
+    try {
+      const { stdout: token } = await execFileAsync("gh", ["auth", "token"], { timeout: 5000 });
+      if (!token.trim()) {
+        return { data: { installed: true, authenticated: false, username: null } };
+      }
+
+      // 3. Get username
+      let username: string | null = null;
+      try {
+        const { stdout } = await execFileAsync("gh", ["api", "user", "--jq", ".login"], { timeout: 5000 });
+        username = stdout.trim() || null;
+      } catch {
+        // Token exists but user query failed — still authenticated
+      }
+
+      return { data: { installed: true, authenticated: true, username } };
+    } catch {
+      return { data: { installed: true, authenticated: false, username: null } };
+    }
+  });
+
+  // Start gh auth login and stream output via SSE
+  app.get("/gh-login", async (_request, reply) => {
+    // Check gh is installed
+    try {
+      await execFileAsync("which", ["gh"], { timeout: 3000 });
+    } catch {
+      return reply.code(400).send({
+        error: { message: "GitHub CLI (gh) is not installed. Install it from https://cli.github.com" },
+      });
+    }
+
+    // Set up SSE headers
+    reply.raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+
+    const sendEvent = (event: string, data: any) => {
+      reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    sendEvent("status", { message: "Starting GitHub authentication..." });
+
+    const child = spawn("gh", ["auth", "login", "--web", "--git-protocol", "https", "--skip-ssh-key"], {
+      env: { ...process.env, GH_PROMPT_DISABLED: "1" },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      const text = chunk.toString();
+      sendEvent("output", { text });
+    });
+
+    child.stderr.on("data", (chunk: Buffer) => {
+      const text = chunk.toString();
+      sendEvent("output", { text });
+    });
+
+    child.on("close", async (code) => {
+      if (code === 0) {
+        // Get the token and username
+        let username: string | null = null;
+        try {
+          const { stdout } = await execFileAsync("gh", ["api", "user", "--jq", ".login"], { timeout: 5000 });
+          username = stdout.trim() || null;
+        } catch {}
+
+        sendEvent("success", { message: "GitHub authentication successful!", username });
+      } else {
+        sendEvent("error", { message: `Authentication failed (exit code ${code})` });
+      }
+      reply.raw.end();
+    });
+
+    child.on("error", (err) => {
+      sendEvent("error", { message: `Failed to start gh: ${err.message}` });
+      reply.raw.end();
+    });
+
+    // Close stdin immediately — gh auth login --web doesn't need stdin input
+    child.stdin.end();
+
+    // Handle client disconnect
+    reply.raw.on("close", () => {
+      try { child.kill("SIGTERM"); } catch {}
+    });
   });
 
   // Dev login endpoint - only works in development

@@ -484,7 +484,8 @@ const handlers: Record<ToolName, ToolHandler<any, any>> = {
         return { success: false, error: "Repository not found" };
       }
 
-      const entries = await listDirectory(repo.id, input.path || "");
+      const rootOverride = repo.provider === "local" ? repo.cloneUrl : undefined;
+      const entries = await listDirectory(repo.id, input.path || "", rootOverride);
       return { success: true, data: entries };
     } catch (err: any) {
       if (err.code === "ENOENT") {
@@ -509,7 +510,8 @@ const handlers: Record<ToolName, ToolHandler<any, any>> = {
         return { success: false, error: "Repository not found" };
       }
 
-      const result = await readFile(repo.id, input.path);
+      const rootOverride = repo.provider === "local" ? repo.cloneUrl : undefined;
+      const result = await readFile(repo.id, input.path, rootOverride);
       return { success: true, data: result };
     } catch (err: any) {
       if (err.code === "ENOENT") {

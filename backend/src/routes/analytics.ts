@@ -58,17 +58,23 @@ export const analyticsRoutes: FastifyPluginAsync = async (app) => {
         }),
         prisma.usageRecord.aggregate({
           where: { userId, ...dateFilter },
-          _sum: { estimatedCostUsd: true },
+          _sum: { estimatedCostUsd: true, inputTokens: true, outputTokens: true },
         }),
       ]);
 
+      const totalTokens = (usageRecords._sum.inputTokens || 0) + (usageRecords._sum.outputTokens || 0);
       const hoursSaved = Math.round(
         (timeSaved._sum.estimatedMinutesSaved || 0) / 60
       );
       const totalCost = usageRecords._sum.estimatedCostUsd || 0;
       const successRate =
         totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
-      const roi = totalCost > 0 ? (hoursSaved * 75) / totalCost : 0; // Default $75/hr
+      const userSettings = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { settings: true },
+      });
+      const savedRate = ((userSettings?.settings as any)?.analyticsHourlyRate) ?? 75;
+      const roi = totalCost > 0 ? (hoursSaved * savedRate) / totalCost : 0;
 
       // Get previous period for trends (same duration before startDate)
       const periodDuration = calculatePeriodDuration(startDate, endDate);
@@ -87,7 +93,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (app) => {
         }),
         prisma.usageRecord.aggregate({
           where: { userId, ...previousPeriodFilter },
-          _sum: { estimatedCostUsd: true },
+          _sum: { estimatedCostUsd: true, inputTokens: true, outputTokens: true },
         }),
       ]);
 
@@ -95,6 +101,7 @@ export const analyticsRoutes: FastifyPluginAsync = async (app) => {
       const prevHours = Math.round(
         (prevTimeSaved._sum.estimatedMinutesSaved || 0) / 60
       );
+      const prevTokens = (prevCost._sum.inputTokens || 0) + (prevCost._sum.outputTokens || 0);
 
       // Generate sparkline data (last 7 data points)
       const sparklineData = await generateSparklines(
@@ -114,6 +121,8 @@ export const analyticsRoutes: FastifyPluginAsync = async (app) => {
             totalCost,
             prevCost._sum.estimatedCostUsd || 0
           ),
+          totalTokens,
+          totalTokensTrend: calculateTrend(totalTokens, prevTokens),
           roi: Math.round(roi * 10) / 10,
           roiTrend: 0, // Calculate if needed
           successRate: Math.round(successRate * 10) / 10,
@@ -128,9 +137,16 @@ export const analyticsRoutes: FastifyPluginAsync = async (app) => {
   app.get<{ Querystring: AnalyticsQuery & { hourlyRate?: string } }>(
     "/roi",
     async (request, reply) => {
-      const { startDate, endDate, hourlyRate = "75" } = request.query;
+      const { startDate, endDate, hourlyRate } = request.query;
       const userId = request.userId;
-      const rate = parseFloat(hourlyRate);
+      let rate = hourlyRate ? parseFloat(hourlyRate) : NaN;
+      if (isNaN(rate)) {
+        const userSettings = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { settings: true },
+        });
+        rate = ((userSettings?.settings as any)?.analyticsHourlyRate) ?? 75;
+      }
 
       const dateFilter = buildDateFilter(startDate, endDate);
 
@@ -772,6 +788,25 @@ export const analyticsRoutes: FastifyPluginAsync = async (app) => {
     }
   );
 
+  // GET /api/analytics/settings
+  app.get(
+    "/settings",
+    async (request, reply) => {
+      const userId = request.userId;
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { settings: true },
+      });
+      const settings = (user?.settings as any) || {};
+      return {
+        data: {
+          hourlyRate: settings.analyticsHourlyRate ?? 75,
+          displayPreferences: settings.analyticsDisplayPreferences || {},
+        },
+      };
+    }
+  );
+
   // PUT /api/analytics/settings
   app.put<{ Body: { hourlyRate?: number; displayPreferences?: object } }>(
     "/settings",
@@ -845,6 +880,7 @@ async function generateSparklines(
   const tasksData: number[] = [];
   const hoursSavedData: number[] = [];
   const costData: number[] = [];
+  const tokensData: number[] = [];
 
   // Get data for the last 7 days
   for (let i = points - 1; i >= 0; i--) {
@@ -874,13 +910,14 @@ async function generateSparklines(
           userId,
           createdAt: { gte: dayStart, lt: dayEnd },
         },
-        _sum: { estimatedCostUsd: true },
+        _sum: { estimatedCostUsd: true, inputTokens: true, outputTokens: true },
       }),
     ]);
 
     tasksData.push(taskCount);
     hoursSavedData.push(Math.round((timeSaved._sum.estimatedMinutesSaved || 0) / 60));
     costData.push(Math.round((usage._sum.estimatedCostUsd || 0) * 100) / 100);
+    tokensData.push((usage._sum.inputTokens || 0) + (usage._sum.outputTokens || 0));
   }
 
   // Calculate ROI and success rate sparklines
@@ -896,6 +933,7 @@ async function generateSparklines(
     tasks: tasksData,
     hoursSaved: hoursSavedData,
     cost: costData,
+    tokens: tokensData,
     roi: roiData,
     successRate: successRateData,
   };
@@ -912,7 +950,9 @@ function groupByTime(
     grouped.set(key, (grouped.get(key) || 0) + record.value);
   }
 
-  return Array.from(grouped.entries()).map(([date, value]) => ({ date, value }));
+  return Array.from(grouped.entries())
+    .map(([date, value]) => ({ date, value }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 function formatDateKey(date: Date, groupBy: string): string {

@@ -2,7 +2,7 @@ import { prisma } from "../db.js";
 import { config } from "../config.js";
 import { decrypt } from "@autosoftware/shared";
 
-export type AuthType = "oauth" | "api_key";
+export type AuthType = "oauth" | "api_key" | "cli";
 
 export interface ResolvedAuth {
   key: string;
@@ -46,13 +46,26 @@ export async function resolveAuth(userId: string): Promise<ResolvedAuth> {
   }
 
   // 3. Fall back to API key from env (no usage tracking)
-  return { key: config.anthropicApiKey, apiKeyId: null, authType: "api_key" };
+  if (config.anthropicApiKey) {
+    return { key: config.anthropicApiKey, apiKeyId: null, authType: "api_key" };
+  }
+
+  // 4. In local/bundled mode, the Agent SDK uses the CLI's own auth
+  if (config.isBundled) {
+    return { key: "", apiKeyId: null, authType: "cli" };
+  }
+
+  return { key: "", apiKeyId: null, authType: "api_key" };
 }
 
 /**
  * Set up environment variables for the Agent SDK based on resolved auth.
  */
 export function setupAgentSdkAuth(auth: ResolvedAuth): void {
+  if (auth.authType === "cli") {
+    // CLI auth — don't set any env vars, let the Agent SDK use the CLI's own credentials
+    return;
+  }
   if (auth.authType === "oauth") {
     process.env.CLAUDE_CODE_OAUTH_TOKEN = auth.key;
     delete process.env.ANTHROPIC_API_KEY;
@@ -66,6 +79,8 @@ export function setupAgentSdkAuth(auth: ResolvedAuth): void {
  * Check if valid authentication is configured.
  */
 export function isValidAuth(auth: ResolvedAuth): boolean {
+  // CLI auth uses the Agent SDK's built-in auth (claude login) — no key needed
+  if (auth.authType === "cli") return true;
   if (!auth.key) return false;
   if (auth.authType === "api_key" && auth.key === "sk-ant-xxx") return false;
   return true;

@@ -38,3 +38,5 @@ npm-debug.log*
 *.local
 
 .superpowers
+bundle/
+bin

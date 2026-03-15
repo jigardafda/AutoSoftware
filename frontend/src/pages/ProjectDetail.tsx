@@ -270,6 +270,31 @@ export function ProjectDetail() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const existingRepoIds = new Set<string>(project?.repos?.map((r: any) => r.id) || []);
+
+  const filteredProjectTasks = useMemo(() => {
+    if (!taskSearch.trim()) return projectTasks;
+    const q = taskSearch.toLowerCase();
+    return projectTasks.filter((t: any) =>
+      t.title?.toLowerCase().includes(q) ||
+      t.repositoryName?.toLowerCase().includes(q) ||
+      t.type?.toLowerCase().includes(q) ||
+      t.targetBranch?.toLowerCase().includes(q)
+    );
+  }, [projectTasks, taskSearch]);
+
+  const pagedTasks = paginate(filteredProjectTasks, tasksPage);
+
+  const totalTasks = stats?.totalTasks ?? 0;
+  const totalCost = stats?.usage?.totalCost ?? 0;
+
+  const handleSwap = useCallback((docs: any[], idx: number, dir: "up" | "down") => {
+    const otherIdx = dir === "up" ? idx - 1 : idx + 1;
+    if (otherIdx < 0 || otherIdx >= docs.length) return;
+    reorderMutation.mutate({ docId: docs[idx].id, sortOrder: docs[otherIdx].sortOrder });
+    reorderMutation.mutate({ docId: docs[otherIdx].id, sortOrder: docs[idx].sortOrder });
+  }, [reorderMutation]);
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -290,31 +315,6 @@ export function ProjectDetail() {
       </div>
     );
   }
-
-  const existingRepoIds = new Set<string>(project.repos?.map((r: any) => r.id) || []);
-
-  const filteredProjectTasks = useMemo(() => {
-    if (!taskSearch.trim()) return projectTasks;
-    const q = taskSearch.toLowerCase();
-    return projectTasks.filter((t: any) =>
-      t.title?.toLowerCase().includes(q) ||
-      t.repositoryName?.toLowerCase().includes(q) ||
-      t.type?.toLowerCase().includes(q) ||
-      t.targetBranch?.toLowerCase().includes(q)
-    );
-  }, [projectTasks, taskSearch]);
-
-  const pagedTasks = paginate(filteredProjectTasks, tasksPage);
-
-  const totalTasks = stats?.totalTasks ?? 0;
-  const totalCost = stats?.usage?.totalCost ?? 0;
-
-  const handleSwap = (docs: any[], idx: number, dir: "up" | "down") => {
-    const otherIdx = dir === "up" ? idx - 1 : idx + 1;
-    if (otherIdx < 0 || otherIdx >= docs.length) return;
-    reorderMutation.mutate({ docId: docs[idx].id, sortOrder: docs[otherIdx].sortOrder });
-    reorderMutation.mutate({ docId: docs[otherIdx].id, sortOrder: docs[idx].sortOrder });
-  };
 
   return (
     <div className="space-y-6">

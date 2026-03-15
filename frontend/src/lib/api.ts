@@ -74,6 +74,8 @@ interface AnalyticsOverview {
   hoursSavedTrend: number;
   totalCost: number;
   totalCostTrend: number;
+  totalTokens: number;
+  totalTokensTrend: number;
   roi: number;
   roiTrend: number;
   successRate: number;
@@ -82,6 +84,7 @@ interface AnalyticsOverview {
     tasks: number[];
     hoursSaved: number[];
     cost: number[];
+    tokens: number[];
     roi: number[];
     successRate: number[];
   };
@@ -191,7 +194,18 @@ async function requestFull<T>(path: string, options?: RequestInit): Promise<T> {
   return data;
 }
 
+function cleanParams(params?: Record<string, any>): string {
+  if (!params) return '';
+  const cleaned = Object.fromEntries(
+    Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
+  );
+  return new URLSearchParams(cleaned as Record<string, string>).toString();
+}
+
 export const api = {
+  config: {
+    get: () => request<{ localMode: boolean }>("/config"),
+  },
   auth: {
     me: () => request<any>("/auth/me"),
     logout: () => request<any>("/auth/logout", { method: "POST" }),
@@ -205,9 +219,30 @@ export const api = {
       request<{ success: boolean; provider: string }>(`/auth/disconnect/${provider}`, {
         method: "POST",
       }),
+    // GitHub CLI auth
+    githubStatus: () =>
+      request<{ installed: boolean; authenticated: boolean; username: string | null }>("/auth/github-status"),
+    // gh-login returns SSE stream — use EventSource in components directly
+  },
+  filesystem: {
+    browse: (path?: string) => {
+      const qs = path ? `?path=${encodeURIComponent(path)}` : "";
+      return requestFull<{
+        path: string;
+        parent: string | null;
+        isGitRepo: boolean;
+        entries: { name: string; path: string; isGitRepo: boolean }[];
+      }>(`/filesystem/browse${qs}`);
+    },
+    branches: (path: string) =>
+      request<{ name: string; isDefault: boolean }[]>(
+        `/filesystem/branches?path=${encodeURIComponent(path)}`
+      ),
   },
   repos: {
     list: () => request<any[]>("/repos"),
+    connectLocal: (path: string) =>
+      request<any>("/repos/connect-local", { method: "POST", body: JSON.stringify({ path }) }),
     available: (provider: string) => request<any[]>(`/repos/available/${provider}`),
     connect: (body: any) => request<any>("/repos", { method: "POST", body: JSON.stringify(body) }),
     update: (id: string, body: any) =>
@@ -240,6 +275,8 @@ export const api = {
       `/api/repos/${id}/raw?path=${encodeURIComponent(path)}`,
     branches: (id: string) =>
       request<{ name: string; isDefault: boolean }[]>(`/repos/${id}/branches`),
+    pullRequests: (id: string, state: "open" | "closed" | "all" = "open") =>
+      request<any[]>(`/repos/${id}/pull-requests?state=${state}`),
   },
   tasks: {
     list: (params?: Record<string, string>) => {
@@ -397,6 +434,14 @@ export const api = {
         method: "POST",
         body: JSON.stringify(body),
       }),
+
+    openWorkspace: async (id: string, agentId?: string) => {
+      const res = await requestFull<{ workspace: any; created: boolean }>(`/tasks/${id}/workspace`, {
+        method: "POST",
+        body: JSON.stringify({ agentId }),
+      });
+      return res;
+    },
 
     // Task Genealogy API
     genealogy: {
@@ -636,9 +681,9 @@ export const api = {
     },
   },
   settings: {
-    get: () => request<{ scanBudget: number; taskBudget: number; planBudget: number }>("/settings"),
-    update: (body: { scanBudget?: number; taskBudget?: number; planBudget?: number }) =>
-      request<{ scanBudget: number; taskBudget: number; planBudget: number }>("/settings", {
+    get: () => request<{ scanBudget: number; taskBudget: number; planBudget: number; defaultAgent: string; agentModels?: Record<string, string> }>("/settings"),
+    update: (body: { scanBudget?: number; taskBudget?: number; planBudget?: number; defaultAgent?: string; agentModels?: Record<string, string> }) =>
+      request<{ scanBudget: number; taskBudget: number; planBudget: number; defaultAgent: string; agentModels?: Record<string, string> }>("/settings", {
         method: "PUT",
         body: JSON.stringify(body),
       }),
@@ -685,13 +730,13 @@ export const api = {
   // Analytics API
   analytics: {
     getOverview: (params?: { startDate?: string; endDate?: string; projectId?: string; repositoryId?: string }) =>
-      request<AnalyticsOverview>(`/analytics/overview?${new URLSearchParams(params as any)}`),
+      request<AnalyticsOverview>(`/analytics/overview?${cleanParams(params)}`),
 
     getROI: (params?: { hourlyRate?: number; startDate?: string; endDate?: string }) =>
-      request<ROIData>(`/analytics/roi?${new URLSearchParams(params as any)}`),
+      request<ROIData>(`/analytics/roi?${cleanParams(params)}`),
 
     getCosts: (params?: { startDate?: string; endDate?: string; groupBy?: 'day' | 'week' | 'month' }) =>
-      request<CostData>(`/analytics/costs?${new URLSearchParams(params as any)}`),
+      request<CostData>(`/analytics/costs?${cleanParams(params)}`),
 
     getPipeline: () =>
       request<PipelineHealth>('/analytics/pipeline'),
@@ -700,24 +745,27 @@ export const api = {
       request<DistributionData>(`/analytics/distribution?type=${type}`),
 
     getContributors: (params?: { limit?: number; startDate?: string; endDate?: string }) =>
-      request<ContributorData[]>(`/analytics/contributors?${new URLSearchParams(params as any)}`),
+      request<ContributorData[]>(`/analytics/contributors?${cleanParams(params)}`),
 
     getTrends: (params: { metric: string; groupBy: 'day' | 'week' | 'month'; startDate?: string; endDate?: string }) =>
-      request<TrendData[]>(`/analytics/trends?${new URLSearchParams(params as any)}`),
+      request<TrendData[]>(`/analytics/trends?${cleanParams(params)}`),
 
     getLOC: (params?: { startDate?: string; endDate?: string; groupBy?: 'day' | 'week' | 'month' }) =>
-      request<LOCData[]>(`/analytics/loc?${new URLSearchParams(params as any)}`),
+      request<LOCData[]>(`/analytics/loc?${cleanParams(params)}`),
 
     getTimeSaved: (params?: { startDate?: string; endDate?: string; groupBy?: 'day' | 'week' | 'month' }) =>
-      request<TimeSavedData[]>(`/analytics/time-saved?${new URLSearchParams(params as any)}`),
+      request<TimeSavedData[]>(`/analytics/time-saved?${cleanParams(params)}`),
 
     getDrillDown: (type: 'user' | 'project' | 'task', id: string) =>
       request<DrillDownData>(`/analytics/drill-down/${type}/${id}`),
 
     exportData: (params: { format: 'csv' | 'json'; startDate?: string; endDate?: string }) =>
-      request<Blob>(`/analytics/export?${new URLSearchParams(params as any)}`, {
+      request<Blob>(`/analytics/export?${cleanParams(params)}`, {
         headers: { Accept: params.format === 'csv' ? 'text/csv' : 'application/json' },
       }),
+
+    getSettings: () =>
+      request<{ hourlyRate: number; displayPreferences: object }>('/analytics/settings'),
 
     updateSettings: (settings: { hourlyRate?: number; displayPreferences?: object }) =>
       request<void>('/analytics/settings', {
@@ -729,22 +777,22 @@ export const api = {
   // AI Metrics API - Self-improvement metrics
   aiMetrics: {
     getOverview: (params?: { startDate?: string; endDate?: string }) =>
-      request<any>(`/ai-metrics/overview?${new URLSearchParams(params as any)}`),
+      request<any>(`/ai-metrics/overview?${cleanParams(params)}`),
 
     getAccuracy: (params?: { startDate?: string; endDate?: string }) =>
-      request<any>(`/ai-metrics/accuracy?${new URLSearchParams(params as any)}`),
+      request<any>(`/ai-metrics/accuracy?${cleanParams(params)}`),
 
     getFalsePositives: (params?: { startDate?: string; endDate?: string; groupBy?: 'day' | 'week' | 'month' }) =>
-      request<any>(`/ai-metrics/false-positives?${new URLSearchParams(params as any)}`),
+      request<any>(`/ai-metrics/false-positives?${cleanParams(params)}`),
 
     getExecutionSuccess: (params?: { startDate?: string; endDate?: string }) =>
-      request<any>(`/ai-metrics/execution-success?${new URLSearchParams(params as any)}`),
+      request<any>(`/ai-metrics/execution-success?${cleanParams(params)}`),
 
     getTrends: (params?: { startDate?: string; endDate?: string; groupBy?: 'day' | 'week' | 'month' }) =>
-      request<any>(`/ai-metrics/trends?${new URLSearchParams(params as any)}`),
+      request<any>(`/ai-metrics/trends?${cleanParams(params)}`),
 
     getFeedback: (params?: { limit?: number; feedbackType?: string }) =>
-      request<any>(`/ai-metrics/feedback?${new URLSearchParams(params as any)}`),
+      request<any>(`/ai-metrics/feedback?${cleanParams(params)}`),
 
     recordFeedback: (body: { entityType: string; entityId: string; feedbackType: string; comment?: string }) =>
       request<any>('/ai-metrics/feedback', {
@@ -781,7 +829,7 @@ export const api = {
       }),
 
     getPromptSuggestions: (params?: { category?: string; minFailureCount?: number }) =>
-      request<any>(`/ai-metrics/prompt-suggestions?${new URLSearchParams(params as any)}`),
+      request<any>(`/ai-metrics/prompt-suggestions?${cleanParams(params)}`),
 
     applyPromptSuggestion: (id: string) =>
       request<any>(`/ai-metrics/prompt-suggestions/${id}/apply`, {
@@ -789,7 +837,7 @@ export const api = {
       }),
 
     getRefinementHistory: (params?: { category?: string; limit?: number }) =>
-      request<any>(`/ai-metrics/refinement-history?${new URLSearchParams(params as any)}`),
+      request<any>(`/ai-metrics/refinement-history?${cleanParams(params)}`),
   },
 
   // AI Chat API
@@ -2218,6 +2266,39 @@ export const api = {
 
     // Get trigger templates
     templates: () => request<{ data: any[] }>("/triggers/templates"),
+  },
+
+  // PR Reviews API
+  reviews: {
+    list: async () => {
+      const res = await requestFull<{ reviews: any[] }>("/reviews");
+      return res.reviews || [];
+    },
+    get: async (id: string) => {
+      const res = await requestFull<{ review: any }>(`/reviews/${id}`);
+      return res.review;
+    },
+    create: async (data: { prUrl: string; agentId?: string }) => {
+      const res = await requestFull<{ review: any }>("/reviews", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+      return res.review;
+    },
+    delete: (id: string) =>
+      request<{ success: boolean }>(`/reviews/${id}`, { method: "DELETE" }),
+    retry: (id: string) =>
+      request<{ success: boolean }>(`/reviews/${id}/retry`, { method: "POST" }),
+    redo: (id: string) =>
+      request<{ success: boolean }>(`/reviews/${id}/redo`, { method: "POST" }),
+    cancel: (id: string) =>
+      request<{ success: boolean }>(`/reviews/${id}/cancel`, { method: "POST" }),
+    openWorkspace: async (id: string) => {
+      const res = await requestFull<{ workspace: any; created: boolean }>(`/reviews/${id}/workspace`, {
+        method: "POST",
+      });
+      return res;
+    },
   },
 };
 
