@@ -45,6 +45,11 @@ export const taskRoutes: FastifyPluginAsync = async (app) => {
           orderBy: { order: "asc" },
           select: { id: true, status: true, order: true },
         },
+        workspaces: {
+          orderBy: { updatedAt: "desc" },
+          take: 1,
+          select: { id: true, status: true },
+        },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -54,6 +59,9 @@ export const taskRoutes: FastifyPluginAsync = async (app) => {
         ...t,
         repositoryName: t.repository.fullName,
         repository: undefined,
+        activeWorkspaceId: t.workspaces[0]?.id || null,
+        workspaceStatus: t.workspaces[0]?.status || null,
+        workspaces: undefined,
       })),
     };
   });
@@ -1487,6 +1495,32 @@ export const taskRoutes: FastifyPluginAsync = async (app) => {
         error: { message: err instanceof Error ? err.message : "Context injection failed" },
       });
     }
+  });
+
+  // Get workspaces for a task
+  app.get<{ Params: { id: string } }>("/:id/workspaces", async (request, reply) => {
+    const task = await prisma.task.findFirst({
+      where: { id: request.params.id, userId: request.userId },
+      select: { id: true },
+    });
+    if (!task) return reply.code(404).send({ error: { message: "Task not found" } });
+
+    const workspaces = await prisma.workspace.findMany({
+      where: { taskId: task.id },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        agentId: true,
+        worktreeBranch: true,
+        worktreePath: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return { data: workspaces };
   });
 
   // Create or find a workspace for a task

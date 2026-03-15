@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Clock,
@@ -13,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { TaskDetailPanel } from "@/components/tasks/TaskDetailPanel";
 
 const STATUS_COLUMNS = [
   { key: "pending", label: "Pending", icon: Clock, color: "text-muted-foreground", accent: "border-t-slate-400" },
@@ -60,7 +61,17 @@ interface TaskKanbanBoardProps {
   onTaskClick?: (task: any) => void;
 }
 
-function KanbanCard({ task, onClick }: { task: any; onClick?: () => void }) {
+function KanbanCard({
+  task,
+  onClick,
+  isSelected,
+  onWorkspaceClick,
+}: {
+  task: any;
+  onClick?: () => void;
+  isSelected?: boolean;
+  onWorkspaceClick?: (e: React.MouseEvent) => void;
+}) {
   const priority = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.medium;
 
   return (
@@ -68,7 +79,8 @@ function KanbanCard({ task, onClick }: { task: any; onClick?: () => void }) {
       className={cn(
         "group relative rounded-lg border bg-card p-3 shadow-sm cursor-pointer",
         "hover:shadow-md hover:border-foreground/20 transition-all duration-200",
-        "active:scale-[0.98]"
+        "active:scale-[0.98]",
+        isSelected && "ring-2 ring-primary border-primary/30"
       )}
       onClick={onClick}
     >
@@ -104,7 +116,7 @@ function KanbanCard({ task, onClick }: { task: any; onClick?: () => void }) {
           </div>
         </div>
 
-        {/* Bottom row: branch, PR, time */}
+        {/* Bottom row: branch, PR, workspace, time */}
         <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-0.5">
           <div className="flex items-center gap-2">
             {task.targetBranch && (
@@ -124,6 +136,13 @@ function KanbanCard({ task, onClick }: { task: any; onClick?: () => void }) {
                 <ExternalLink className="h-3 w-3" />
               </a>
             )}
+            <button
+              className="flex items-center gap-0.5 hover:text-primary transition-colors"
+              onClick={onWorkspaceClick}
+              title="View task details"
+            >
+              <ExternalLink className="h-3 w-3" />
+            </button>
           </div>
           <span className="shrink-0">{relativeTime(task.createdAt)}</span>
         </div>
@@ -134,6 +153,7 @@ function KanbanCard({ task, onClick }: { task: any; onClick?: () => void }) {
 
 export function TaskKanbanBoard({ tasks, onTaskClick }: TaskKanbanBoardProps) {
   const navigate = useNavigate();
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   const columns = useMemo(() => {
     const grouped: Record<string, any[]> = {};
@@ -151,7 +171,17 @@ export function TaskKanbanBoard({ tasks, onTaskClick }: TaskKanbanBoardProps) {
     return grouped;
   }, [tasks]);
 
+  const selectedTask = selectedTaskId
+    ? tasks.find((t) => t.id === selectedTaskId)
+    : null;
+
   const handleClick = (task: any) => {
+    // Toggle inline workspace chat on card click
+    setSelectedTaskId(task.id === selectedTaskId ? null : task.id);
+  };
+
+  const handleOpenDetail = (task: any, e: React.MouseEvent) => {
+    e.stopPropagation();
     if (onTaskClick) {
       onTaskClick(task);
     } else {
@@ -160,64 +190,81 @@ export function TaskKanbanBoard({ tasks, onTaskClick }: TaskKanbanBoardProps) {
   };
 
   return (
-    <ScrollArea className="w-full">
-      <div className="flex gap-3 pb-4 min-w-max">
-        {STATUS_COLUMNS.map((col) => {
-          const Icon = col.icon;
-          const columnTasks = columns[col.key];
-          const isEmpty = columnTasks.length === 0;
+    <div className="flex gap-0 h-full">
+      {/* Kanban columns */}
+      <div className={cn("flex-1 transition-all duration-300", selectedTask && "max-w-[calc(100%-380px)]")}>
+        <ScrollArea className="w-full">
+          <div className="flex gap-3 pb-4 min-w-max">
+            {STATUS_COLUMNS.map((col) => {
+              const Icon = col.icon;
+              const columnTasks = columns[col.key];
+              const isEmpty = columnTasks.length === 0;
 
-          return (
-            <div
-              key={col.key}
-              className={cn(
-                "flex flex-col w-[280px] shrink-0 rounded-xl border border-border/60 bg-muted/30",
-                "border-t-2",
-                col.accent
-              )}
-            >
-              {/* Column header */}
-              <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border/40">
-                <Icon
+              return (
+                <div
+                  key={col.key}
                   className={cn(
-                    "h-4 w-4 shrink-0",
-                    col.color,
-                    col.spin && "animate-spin"
+                    "flex flex-col w-[280px] shrink-0 rounded-xl border border-border/60 bg-muted/30",
+                    "border-t-2",
+                    col.accent
                   )}
-                />
-                <span className="text-sm font-medium truncate">{col.label}</span>
-                <Badge
-                  variant="secondary"
-                  className="ml-auto text-[10px] h-5 min-w-[20px] justify-center px-1.5 tabular-nums"
                 >
-                  {columnTasks.length}
-                </Badge>
-              </div>
-
-              {/* Column body */}
-              <div className={cn(
-                "flex-1 p-2 space-y-2 overflow-y-auto max-h-[calc(100vh-320px)] min-h-[120px]",
-                isEmpty && "flex items-center justify-center"
-              )}>
-                {isEmpty ? (
-                  <p className="text-xs text-muted-foreground/50 select-none">
-                    No tasks
-                  </p>
-                ) : (
-                  columnTasks.map((task) => (
-                    <KanbanCard
-                      key={task.id}
-                      task={task}
-                      onClick={() => handleClick(task)}
+                  {/* Column header */}
+                  <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border/40">
+                    <Icon
+                      className={cn(
+                        "h-4 w-4 shrink-0",
+                        col.color,
+                        col.spin && "animate-spin"
+                      )}
                     />
-                  ))
-                )}
-              </div>
-            </div>
-          );
-        })}
+                    <span className="text-sm font-medium truncate">{col.label}</span>
+                    <Badge
+                      variant="secondary"
+                      className="ml-auto text-[10px] h-5 min-w-[20px] justify-center px-1.5 tabular-nums"
+                    >
+                      {columnTasks.length}
+                    </Badge>
+                  </div>
+
+                  {/* Column body */}
+                  <div className={cn(
+                    "flex-1 p-2 space-y-2 overflow-y-auto max-h-[calc(100vh-320px)] min-h-[120px]",
+                    isEmpty && "flex items-center justify-center"
+                  )}>
+                    {isEmpty ? (
+                      <p className="text-xs text-muted-foreground/50 select-none">
+                        No tasks
+                      </p>
+                    ) : (
+                      columnTasks.map((task) => (
+                        <KanbanCard
+                          key={task.id}
+                          task={task}
+                          isSelected={task.id === selectedTaskId}
+                          onClick={() => handleClick(task)}
+                          onWorkspaceClick={(e) => handleOpenDetail(task, e)}
+                        />
+                      ))
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <ScrollBar orientation="horizontal" />
+        </ScrollArea>
       </div>
-      <ScrollBar orientation="horizontal" />
-    </ScrollArea>
+
+      {/* Task detail / workspace chat panel */}
+      {selectedTask && (
+        <div className="w-[380px] shrink-0 border-l bg-background flex flex-col animate-in slide-in-from-right-5 duration-200">
+          <TaskDetailPanel
+            task={selectedTask}
+            onClose={() => setSelectedTaskId(null)}
+          />
+        </div>
+      )}
+    </div>
   );
 }

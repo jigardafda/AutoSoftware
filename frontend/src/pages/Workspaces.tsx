@@ -273,8 +273,8 @@ export function Workspaces() {
                     <GitPullRequestArrow className="h-3.5 w-3.5" />
                     <span className="truncate">PR Review</span>
                     {workspace.prReview.verdict && (
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 capitalize">
-                        {workspace.prReview.verdict.replace("_", " ")}
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                        {workspace.prReview.verdict.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
                       </Badge>
                     )}
                   </div>

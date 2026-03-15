@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TaskFilters } from "@/components/tasks/TaskFilters";
 import { TaskTable } from "@/components/tasks/TaskTable";
 import { TaskKanbanBoard } from "@/components/tasks/TaskKanbanBoard";
+import { TaskDetailPanel } from "@/components/tasks/TaskDetailPanel";
 import { TaskViewToolbar, type TaskViewMode } from "@/components/tasks/TaskViewToolbar";
 import { CreateTaskSheet } from "@/components/tasks/CreateTaskSheet";
 import { CreateBatchDialog } from "@/components/tasks/CreateBatchDialog";
@@ -51,6 +52,7 @@ export function Tasks() {
   const [viewMode, setViewMode] = useState<TaskViewMode>(() => {
     return (localStorage.getItem("tasks-view-mode") as TaskViewMode) || "list";
   });
+  const [selectedTask, setSelectedTask] = useState<any | null>(null);
 
   // Handle navigation state for opening create sheet from mobile FAB
   useEffect(() => {
@@ -150,9 +152,9 @@ export function Tasks() {
 
   const handleRowClick = useCallback(
     (task: any) => {
-      navigate(`/tasks/${task.id}`);
+      setSelectedTask((prev: any) => prev?.id === task.id ? null : task);
     },
-    [navigate]
+    []
   );
 
   const planMutation = useMutation({
@@ -444,21 +446,31 @@ export function Tasks() {
       ) : viewMode === "kanban" ? (
         <TaskKanbanBoard tasks={sorted} onTaskClick={handleRowClick} />
       ) : (
-        <>
-          <TaskTable
-            tasks={pagedTasks}
-            selectedIds={selectedIds}
-            onSelect={handleSelect}
-            onSelectAll={handleSelectAll}
-            onRowClick={handleRowClick}
-            sort={sort}
-            onSort={onSort}
-            onDelete={(id) => bulkDeleteMutation.mutate([id])}
-            onRetry={(id) => bulkRetryMutation.mutate([id])}
-            onExecute={(id) => bulkExecuteMutation.mutate([id])}
-          />
-          <Pagination page={page} total={filteredTasks.length} onPageChange={setPage} />
-        </>
+        <div className="flex gap-0">
+          <div className={`flex-1 min-w-0 transition-all duration-300 ${selectedTask ? "max-w-[calc(100%-380px)]" : ""}`}>
+            <TaskTable
+              tasks={pagedTasks}
+              selectedIds={selectedIds}
+              onSelect={handleSelect}
+              onSelectAll={handleSelectAll}
+              onRowClick={handleRowClick}
+              sort={sort}
+              onSort={onSort}
+              onDelete={(id) => bulkDeleteMutation.mutate([id])}
+              onRetry={(id) => bulkRetryMutation.mutate([id])}
+              onExecute={(id) => bulkExecuteMutation.mutate([id])}
+            />
+            <Pagination page={page} total={filteredTasks.length} onPageChange={setPage} />
+          </div>
+          {selectedTask && (
+            <div className="w-[380px] shrink-0 border-l bg-background flex flex-col animate-in slide-in-from-right-5 duration-200 rounded-lg border h-[calc(100vh-280px)]">
+              <TaskDetailPanel
+                task={selectedTask}
+                onClose={() => setSelectedTask(null)}
+              />
+            </div>
+          )}
+        </div>
       )}
 
       {/* Create Sheet */}

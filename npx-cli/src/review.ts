@@ -1,5 +1,6 @@
 import { execFile, execSync, spawn } from "node:child_process";
-import { writeFileSync, unlinkSync } from "node:fs";
+import { writeFileSync, unlinkSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { promisify } from "node:util";
 import chalk from "chalk";
 import ora from "ora";
@@ -146,7 +147,9 @@ async function runAgent(agentId: string, prompt: string): Promise<string> {
     }
     case "aider": {
       // Aider reads from --message, write prompt to a temp file
-      const tmpFile = `/tmp/auto-review-${Date.now()}.txt`;
+      const reviewDir = `${homedir()}/.auto-software/reviews`;
+      mkdirSync(reviewDir, { recursive: true });
+      const tmpFile = `${reviewDir}/auto-review-${Date.now()}.txt`;
       writeFileSync(tmpFile, prompt);
       try {
         const { stdout } = await execFileAsync(agent.command, ["--message-file", tmpFile, "--no-git", "--yes"], {

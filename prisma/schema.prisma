@@ -305,6 +305,7 @@ model Task {
   batchOperationTask   BatchOperationTask?
   chatArtifacts        ChatArtifact[] // Artifacts attached from AI Assistant
   proactiveSuggestions ProactiveSuggestion[] // Suggestions related to this task
+  workspaces           Workspace[]
 
   @@index([parentTaskId])
 }
@@ -2195,6 +2196,7 @@ model Workspace {
   completedAt    DateTime?
 
   user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task       Task?              @relation(fields: [taskId], references: [id], onDelete: SetNull)
   prReview   PrReview?          @relation(fields: [prReviewId], references: [id], onDelete: SetNull)
   sessions   WorkspaceSession[]
 

@@ -3,7 +3,8 @@ import { agentRegistry } from './acp/agent-registry.js';
 import { fetchPullRequestDiff, type PrDiffInfo } from './git-providers.js';
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
-import { writeFileSync, unlinkSync } from 'fs';
+import { writeFileSync, unlinkSync, mkdirSync } from 'fs';
+import { homedir } from 'os';
 import type { OAuthProvider } from '@autosoftware/shared';
 
 const execFileAsync = promisify(execFile);
@@ -188,7 +189,9 @@ async function runAgentReview(agentId: string, prompt: string, modelId?: string)
     case 'gemini':
       return spawnAgentProcess('gemini', ['-p', '-'], childEnv, prompt);
     case 'aider': {
-      const tmpFile = `/tmp/auto-review-${Date.now()}.txt`;
+      const reviewDir = `${homedir()}/.auto-software/reviews`;
+      mkdirSync(reviewDir, { recursive: true });
+      const tmpFile = `${reviewDir}/auto-review-${Date.now()}.txt`;
       writeFileSync(tmpFile, prompt);
       try {
         const { stdout } = await execFileAsync('aider', ['--message-file', tmpFile, '--no-git', '--yes'], {

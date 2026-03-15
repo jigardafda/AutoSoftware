@@ -145,7 +145,7 @@ function ProfileTab() {
                 >
                   <div className="flex items-center gap-3">
                     <ProviderIcon provider={provider} />
-                    <span className="font-medium capitalize">{provider}</span>
+                    <span className="font-medium">{{ github: "GitHub", gitlab: "GitLab", bitbucket: "Bitbucket" }[provider] ?? provider}</span>
                   </div>
                   {connected ? (
                     <div className="flex items-center gap-2">

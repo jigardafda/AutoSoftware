@@ -76,7 +76,7 @@ export function MetricCard({ label, value, icon: Icon, trend, sparkline, accentC
 
       <div className="flex items-end justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <span className="text-xl font-bold tracking-tight block">{formatValue()}</span>
+          <span className="text-xl font-bold tracking-tight block truncate">{formatValue()}</span>
           {trend && (
             <div className="flex items-center gap-1 mt-1">
               <span

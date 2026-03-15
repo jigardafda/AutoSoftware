@@ -583,7 +583,7 @@ export function ProjectDetail() {
                           <span className="font-medium truncate">{repo.fullName}</span>
                         </div>
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground capitalize">{repo.provider}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{{ github: "GitHub", gitlab: "GitLab", bitbucket: "Bitbucket" }[repo.provider] ?? repo.provider}</TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         {editingRepoBranch === repo.id ? (
                           <form

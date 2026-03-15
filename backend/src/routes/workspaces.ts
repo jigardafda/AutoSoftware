@@ -25,8 +25,11 @@ import {
 async function buildWorkspaceContext(workspace: {
   prReviewId?: string | null;
   taskId?: string | null;
+  worktreePath?: string | null;
+  localPath?: string | null;
 }): Promise<string> {
   const parts: string[] = [];
+  const hasWorkingDirectory = !!(workspace.worktreePath || workspace.localPath);
 
   if (workspace.prReviewId) {
     const review = await prisma.prReview.findUnique({ where: { id: workspace.prReviewId } });
@@ -113,7 +116,43 @@ async function buildWorkspaceContext(workspace: {
 
   if (parts.length === 0) return '';
 
+  // Add working directory status
+  if (!hasWorkingDirectory) {
+    parts.push(`\n## Important: No Repository Access`);
+    parts.push(`This workspace does NOT have access to the repository's source code. The repository could not be cloned or accessed locally.`);
+    parts.push(`Do NOT try to search for files, run bash commands to find code, or assume any files exist in the current directory.`);
+    parts.push(`Instead, focus on:`);
+    parts.push(`- Planning the implementation based on the task description`);
+    parts.push(`- Writing detailed implementation plans, pseudocode, or code snippets`);
+    parts.push(`- Discussing architecture and approach`);
+    parts.push(`- Answering questions about the task`);
+    parts.push(`\nIf the user asks you to write or modify code, provide the code in your response as code blocks rather than trying to use file tools.`);
+  }
+
   return `<context>\nThis workspace is linked to the following. Use this context to inform your responses.\n\n${parts.join('\n')}\n</context>\n\n`;
+}
+
+/**
+ * Sync workspace activity status back to the linked task.
+ */
+async function syncTaskStatus(taskId: string | null | undefined, status: 'in_progress' | 'awaiting_input' | 'completed' | 'failed') {
+  if (!taskId) return;
+  try {
+    const task = await prisma.task.findUnique({ where: { id: taskId }, select: { status: true } });
+    if (!task) return;
+    // Don't overwrite terminal statuses unless completing
+    const terminalStatuses = ['completed', 'cancelled', 'failed'];
+    if (terminalStatuses.includes(task.status) && status !== 'completed' && status !== 'failed') return;
+    await prisma.task.update({
+      where: { id: taskId },
+      data: {
+        status,
+        ...(status === 'completed' ? { completedAt: new Date() } : {}),
+      },
+    });
+  } catch {
+    // Best-effort — don't fail workspace operations
+  }
 }
 
 export const workspaceRoutes: FastifyPluginAsync = async (app) => {
@@ -295,8 +334,10 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
     // If no working directory, use a temp directory so the agent can still chat
     let effectiveWorkDir = workDir;
     if (!effectiveWorkDir) {
-      const { tmpdir } = await import('os');
-      effectiveWorkDir = tmpdir();
+      const { homedir } = await import('os');
+      const { mkdirSync } = await import('fs');
+      effectiveWorkDir = `${homedir()}/.auto-software/scratch`;
+      mkdirSync(effectiveWorkDir, { recursive: true });
     }
 
     // If no active session, create one and start with the initial prompt
@@ -342,6 +383,8 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
                   data: { claudeSessionId: claudeId },
                 }).catch(() => {});
               }
+              // Sync: agent started → task in_progress
+              syncTaskStatus(workspace.taskId, 'in_progress');
             }
             break;
           }
@@ -397,6 +440,8 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
               agentTextAccum = "";
               saveMsg("assistant", text);
             }
+            // Sync: agent finished turn, waiting for user input
+            syncTaskStatus(workspace.taskId, 'awaiting_input');
             break;
           }
         }
@@ -431,6 +476,8 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
     } else {
       // Existing session — send follow-up message (fire-and-forget)
       const currentSession = acpSession;
+      // Sync: user sent follow-up → agent working → task in_progress
+      syncTaskStatus(workspace.taskId, 'in_progress');
       currentSession.sendMessage(content, attachments).catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
         currentSession.emit('event', { type: 'error', data: { message: `Failed to send message: ${msg}` }, timestamp: Date.now() });
@@ -442,7 +489,7 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
 
   // Stop session
   app.post('/:id/sessions/:sessionId/stop', { preHandler: [app.requireAuth] }, async (request) => {
-    const { sessionId } = request.params as { sessionId: string };
+    const { id, sessionId } = request.params as { id: string; sessionId: string };
     const { acpSessionId } = request.body as { acpSessionId: string };
 
     const acpSession = sessionPool.get(acpSessionId);
@@ -452,6 +499,12 @@ export const workspaceRoutes: FastifyPluginAsync = async (app) => {
       where: { id: sessionId },
       data: { status: 'completed', endedAt: new Date() }
     });
+
+    // Sync task status: session stopped → task awaiting_input (user can resume)
+    const ws = await prisma.workspace.findUnique({ where: { id }, select: { taskId: true } });
+    if (ws?.taskId) {
+      syncTaskStatus(ws.taskId, 'awaiting_input');
+    }
 
     return { ok: true };
   });
