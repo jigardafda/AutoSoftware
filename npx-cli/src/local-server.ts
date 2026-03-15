@@ -84,35 +84,36 @@ async function loadOrCreateConfig(dataDir: string): Promise<LocalConfig> {
 async function installBundleDeps(): Promise<void> {
   if (!IS_BUNDLED) return;
 
-  // npm publish may strip or break node_modules (especially file: symlinks).
-  // Check for @autosoftware/shared specifically — it's the most fragile dependency.
+  // 1. Install npm deps if @autosoftware/shared is missing (file: symlinks break on publish)
   const sharedInBackend = path.join(PROJECT_ROOT, "backend", "node_modules", "@autosoftware", "shared");
+  let needsInstall = false;
   try {
     await access(sharedInBackend, constants.R_OK);
-    return; // Already installed correctly
   } catch {
-    // Need to install (missing or broken symlink)
+    needsInstall = true;
   }
 
-  const spinner = ora("Installing bundle dependencies (first run)...").start();
-
-  const dirs = ["packages/shared", "backend", "worker"];
-  for (const dir of dirs) {
-    const dirPath = path.join(PROJECT_ROOT, dir);
-    try {
-      await execFileAsync("npm", ["install", "--omit=dev", "--ignore-scripts"], {
-        cwd: dirPath,
-        env: { ...process.env },
-        timeout: 120_000,
-      });
-    } catch (err: unknown) {
-      spinner.fail(chalk.red(`Failed to install dependencies in ${dir}`));
-      throw err;
+  if (needsInstall) {
+    const spinner = ora("Installing bundle dependencies (first run)...").start();
+    const dirs = ["packages/shared", "backend", "worker"];
+    for (const dir of dirs) {
+      const dirPath = path.join(PROJECT_ROOT, dir);
+      try {
+        await execFileAsync("npm", ["install", "--omit=dev", "--ignore-scripts"], {
+          cwd: dirPath,
+          env: { ...process.env },
+          timeout: 120_000,
+        });
+      } catch (err: unknown) {
+        spinner.fail(chalk.red(`Failed to install dependencies in ${dir}`));
+        throw err;
+      }
     }
+    spinner.succeed(chalk.green("Bundle dependencies installed"));
   }
 
-  // Create a root-level node_modules symlink so that generated/prisma/ (and any
-  // other code outside backend/worker) can resolve packages like @prisma/client.
+  // 2. Always ensure root node_modules symlink exists so generated/prisma/
+  //    can resolve @prisma/client via bundle/node_modules -> bundle/backend/node_modules
   const rootNodeModules = path.join(PROJECT_ROOT, "node_modules");
   try {
     await access(rootNodeModules, constants.R_OK);
@@ -123,8 +124,6 @@ async function installBundleDeps(): Promise<void> {
       "dir"
     );
   }
-
-  spinner.succeed(chalk.green("Bundle dependencies installed"));
 }
 
 async function runPrismaMigrations(databaseUrl: string): Promise<void> {
