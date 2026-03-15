@@ -1,4 +1,4 @@
-# @boltic/auto-software
+# auto-software
 
 **Put your entire software team on autopilot — the 100x engineer you dreamt of.**
 
@@ -7,7 +7,7 @@ AutoSoftware is an autonomous software engineering platform. AI agents scan your
 ## Quick Start
 
 ```bash
-npx @boltic/auto-software
+npx auto-software
 ```
 
 That's it. A full engineering dashboard launches at `http://localhost:8001` with an embedded database — no Docker, no config files, no setup.
@@ -21,7 +21,7 @@ Create a task, assign it to an AI agent, and watch it plan, code, and open a PR 
 Review any pull request with a single command:
 
 ```bash
-npx @boltic/auto-software review https://github.com/org/repo/pull/123
+npx auto-software review https://github.com/org/repo/pull/123
 ```
 
 Works with **GitHub**, **GitLab**, and **Bitbucket** or any local git repository as well. Uses whichever AI agent you have installed — Claude Code, Codex, Gemini, Aider, or Amp.
@@ -48,7 +48,7 @@ Track engineering velocity, cost, ROI, and AI agent performance across all your 
 ### `start` (default)
 
 ```bash
-npx @boltic/auto-software [start] [options]
+npx auto-software [start] [options]
 ```
 
 Starts the local AutoSoftware server.
@@ -64,7 +64,7 @@ Starts the local AutoSoftware server.
 ### `review <pr-url>`
 
 ```bash
-npx @boltic/auto-software review <pr-url> [options]
+npx auto-software review <pr-url> [options]
 ```
 
 Runs an AI-powered code review on a pull request.
