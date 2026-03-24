@@ -318,6 +318,7 @@ export async function handleRepoScan(jobs: { data: { repoId: string; projectId?:
     });
 
     await emitLog(scanResult.id, "step", "Analyzing codebase with AI agent...");
+    await emitLog(scanResult.id, "info", "AI agent will search and analyze source files (respecting .gitignore)");
 
     // Build language-specific context for the prompt
     const languageContext = languageProfile ? formatLanguageProfilePrompt(languageProfile) : "";
@@ -463,7 +464,14 @@ IMPORTANT: Respond with ONLY a JSON object (not an array) in this exact format:
           cwd: repoDir,
         },
       },
-      { apiKeyId, source: "scan", sourceId: repoId }
+      {
+        apiKeyId,
+        source: "scan",
+        sourceId: repoId,
+        onLog: async (level, message, metadata) => {
+          await emitLog(scanResult.id, level, message, metadata);
+        },
+      }
     );
 
     totalInputTokens += scanUsage.inputTokens;

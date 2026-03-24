@@ -207,9 +207,39 @@ export async function agentQueryWithUsage(
             rawInput?: unknown;
             locations?: Array<{ uri: string }>;
           };
-          await onLog?.("tool", `Using tool: ${toolData.title || "unknown"}`, {
+          // Extract detailed info from rawInput for better progress visibility
+          const input = toolData.rawInput as Record<string, unknown> | undefined;
+          let detailMessage = `Using tool: ${toolData.title || "unknown"}`;
+
+          if (input) {
+            // Read tool - show file path
+            if (toolData.title === "Read" && input.file_path) {
+              detailMessage = `Reading file: ${input.file_path}`;
+            }
+            // Glob tool - show pattern
+            else if (toolData.title === "Glob" && input.pattern) {
+              detailMessage = `Searching for files: ${input.pattern}${input.path ? ` in ${input.path}` : ""}`;
+            }
+            // Grep tool - show pattern
+            else if (toolData.title === "Grep" && input.pattern) {
+              detailMessage = `Searching code for: "${input.pattern}"${input.glob ? ` in ${input.glob}` : ""}`;
+            }
+            // Bash tool - show command preview
+            else if (toolData.title === "Bash" && input.command) {
+              const cmd = String(input.command);
+              const preview = cmd.length > 100 ? cmd.slice(0, 100) + "..." : cmd;
+              detailMessage = `Running command: ${preview}`;
+            }
+            // Agent tool - show subagent description
+            else if (toolData.title === "Agent" && input.description) {
+              detailMessage = `Spawning subagent: ${input.description}`;
+            }
+          }
+
+          await onLog?.("tool", detailMessage, {
             tool: toolData.title,
             status: toolData.status,
+            input: input,
           });
           if (taskId) {
             const toolOutput = `[Tool: ${toolData.title}] ${JSON.stringify(toolData.rawInput, null, 2)}`;

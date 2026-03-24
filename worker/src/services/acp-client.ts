@@ -1,30 +1,20 @@
 /**
- * ACP (Agent Client Protocol) client for spawning and communicating with
- * any coding agent CLI (Claude Code, Codex, Gemini, Aider, etc.).
+ * Agent client for spawning Claude Code and parsing its stream-json output.
  *
- * Replaces the Claude-specific Agent SDK with the standard ACP protocol,
- * allowing any ACP-compatible agent to be used interchangeably.
+ * Claude Code uses a proprietary stream-json format (not ACP protocol).
+ * This client spawns claude with -p --output-format=stream-json --verbose
+ * and parses the NDJSON output to extract events.
  */
 
-import { spawn, type ChildProcess } from "child_process";
-import { Writable, Readable } from "stream";
-import {
-  ClientSideConnection,
-  ndJsonStream,
-  PROTOCOL_VERSION,
-  type Client,
-  type SessionNotification,
-  type RequestPermissionRequest,
-  type RequestPermissionResponse,
-  type Usage,
-} from "@agentclientprotocol/sdk";
+import { spawn } from "child_process";
+import * as readline from "readline";
 import { ACPEventLogger } from "./acp-event-logger.js";
 import { config } from "../config.js";
 
-// Default agent config for Claude Code
+// Default agent config for Claude Code (uses stream-json protocol)
 const DEFAULT_AGENT = {
   command: "claude",
-  args: ["--acp"],
+  args: ["-p", "--output-format=stream-json", "--verbose", "--permission-mode=bypassPermissions"],
 };
 
 export interface AgentConfig {
@@ -45,10 +35,6 @@ export interface ACPQueryOptions {
   env?: Record<string, string>;
   /** Callback for session updates (text chunks, tool calls, etc.) */
   onUpdate?: (update: SessionUpdateEvent) => void | Promise<void>;
-  /** Callback for permission requests (auto-approves if not provided) */
-  onPermission?: (
-    params: RequestPermissionRequest
-  ) => Promise<RequestPermissionResponse>;
   /** AbortSignal for cancellation support */
   signal?: AbortSignal;
 }
@@ -80,10 +66,10 @@ export interface ACPQueryResult {
 }
 
 /**
- * Run a prompt through an ACP-compatible agent CLI.
+ * Run a prompt through Claude Code using stream-json protocol.
  *
- * Spawns the agent process, establishes an ACP connection,
- * creates a session, sends the prompt, collects results, and cleans up.
+ * Spawns Claude with: claude -p --output-format=stream-json --verbose --permission-mode=bypassPermissions
+ * Parses NDJSON lines from stdout and extracts events.
  */
 export async function acpQuery(options: ACPQueryOptions): Promise<ACPQueryResult> {
   const {
@@ -93,16 +79,24 @@ export async function acpQuery(options: ACPQueryOptions): Promise<ACPQueryResult
     agent = DEFAULT_AGENT,
     env,
     onUpdate,
-    onPermission,
     signal,
   } = options;
 
-  // Spawn the agent CLI process
-  const agentProcess = spawn(agent.command, agent.args, {
+  // Build the full prompt (prepend system prompt if provided)
+  const fullPrompt = systemPrompt
+    ? `${systemPrompt}\n\n---\n\n${prompt}`
+    : prompt;
+
+  // Spawn the agent CLI process with the prompt as argument
+  const args = [...agent.args, fullPrompt];
+  const agentProcess = spawn(agent.command, args, {
     cwd,
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, ...env, FORCE_COLOR: "0" },
   });
+
+  // Close stdin so Claude starts processing immediately
+  agentProcess.stdin?.end();
 
   // Capture stderr for debugging
   let stderrOutput = "";
@@ -110,197 +104,221 @@ export async function acpQuery(options: ACPQueryOptions): Promise<ACPQueryResult
     stderrOutput += chunk.toString();
   });
 
-  // Create ACP streams (cast to satisfy Web Streams API types)
-  const input = Writable.toWeb(agentProcess.stdin!) as WritableStream<Uint8Array>;
-  const output = Readable.toWeb(agentProcess.stdout!) as ReadableStream<Uint8Array>;
-  const stream = ndJsonStream(input, output);
-
-  // Accumulated result text
+  // State for accumulating results
   let resultText = "";
-  let usageData: Usage | null = null;
-  let costUsd = 0;
-
-  // Event logger (will be initialized after we get a session ID)
-  let eventLogger: ACPEventLogger | null = null;
-
-  // Create ACP client that handles agent notifications
-  const client: Client = {
-    async requestPermission(params) {
-      eventLogger?.log("permission_request", params);
-      if (onPermission) {
-        return onPermission(params);
-      }
-      // Auto-approve: find the "allow_once" or "allow_always" option
-      const allowAlways = params.options.find((o) => o.kind === "allow_always");
-      const allowOnce = params.options.find((o) => o.kind === "allow_once");
-      const selected = allowAlways || allowOnce || params.options[0];
-      const response = {
-        outcome: {
-          outcome: "selected" as const,
-          optionId: selected.optionId,
-        },
-      };
-      eventLogger?.log("permission_response", response);
-      return response;
-    },
-
-    async sessionUpdate(params: SessionNotification) {
-      const update = params.update;
-      eventLogger?.log(update.sessionUpdate, update);
-      switch (update.sessionUpdate) {
-        case "agent_message_chunk":
-          if (update.content.type === "text") {
-            resultText += update.content.text;
-            await onUpdate?.({
-              type: "text",
-              data: { text: update.content.text },
-            });
-          }
-          break;
-
-        case "agent_thought_chunk":
-          await onUpdate?.({
-            type: "thought",
-            data: update,
-          });
-          break;
-
-        case "tool_call":
-          await onUpdate?.({
-            type: "tool_call",
-            data: update,
-          });
-          break;
-
-        case "tool_call_update":
-          await onUpdate?.({
-            type: "tool_call_update",
-            data: update,
-          });
-          break;
-
-        case "plan":
-          await onUpdate?.({
-            type: "plan",
-            data: update,
-          });
-          break;
-
-        case "usage_update":
-          if (update.cost) {
-            costUsd = update.cost.amount;
-          }
-          await onUpdate?.({
-            type: "usage_update",
-            data: update,
-          });
-          break;
-
-        default:
-          break;
-      }
-    },
-  };
-
-  // Create the ACP connection
-  const connection = new ClientSideConnection((_agent) => client, stream);
-
   let sessionId: string | undefined;
+  let costUsd = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
   let stopReason = "end_turn";
 
+  // Event logger (initialized after we get a session ID)
+  let eventLogger: ACPEventLogger | null = null;
+
+  // Parse stdout as NDJSON lines
+  const rl = readline.createInterface({
+    input: agentProcess.stdout!,
+    crlfDelay: Infinity,
+  });
+
   // Set up abort handler for cancellation
-  const onAbort = async () => {
-    if (sessionId) {
-      try {
-        eventLogger?.log("cancel", { sessionId });
-        await connection.cancel({ sessionId });
-      } catch {
-        // Agent may already be gone
-      }
-    }
+  const onAbort = () => {
     if (!agentProcess.killed) {
       agentProcess.kill("SIGTERM");
     }
   };
   signal?.addEventListener("abort", onAbort, { once: true });
 
-  try {
-    // Initialize the ACP connection
-    await connection.initialize({
-      protocolVersion: PROTOCOL_VERSION,
-      clientCapabilities: {},
-    });
+  return new Promise<ACPQueryResult>((resolve, reject) => {
+    rl.on("line", async (line) => {
+      if (!line.trim()) return;
 
-    // Create a new session
-    const sessionResult = await connection.newSession({
-      cwd,
-      mcpServers: [],
-    });
-    sessionId = sessionResult.sessionId;
+      let event: any;
+      try {
+        event = JSON.parse(line);
+      } catch {
+        // Skip non-JSON lines
+        return;
+      }
 
-    // Initialize event logger now that we have a session ID
-    eventLogger = new ACPEventLogger(config.workDir, sessionId);
-    eventLogger.log("session_start", { agentCommand: agent.command, cwd });
+      // Initialize logger on first event with session_id
+      if (event.session_id && !sessionId) {
+        sessionId = event.session_id;
+        eventLogger = new ACPEventLogger(config.workDir, sessionId as string);
+        eventLogger.log("session_start", { agentCommand: agent.command, cwd });
+      }
 
-    // Check if already aborted
-    if (signal?.aborted) {
-      throw new Error("Query was cancelled");
-    }
+      eventLogger?.log("stream_event", event);
 
-    // Build the full prompt (prepend system prompt if provided)
-    const fullPrompt = systemPrompt
-      ? `${systemPrompt}\n\n---\n\n${prompt}`
-      : prompt;
+      const type = event.type as string;
 
-    // Send the prompt
-    const promptResult = await connection.prompt({
-      sessionId: sessionResult.sessionId,
-      prompt: [{ type: "text", text: fullPrompt }],
-    });
-
-    stopReason = promptResult.stopReason;
-
-    // Extract usage from response
-    if (promptResult.usage) {
-      usageData = promptResult.usage;
-    }
-  } catch (err) {
-    eventLogger?.log("error", { message: err instanceof Error ? err.message : String(err) });
-    // If the process crashed, include stderr in the error
-    if (stderrOutput) {
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(`ACP agent error: ${msg}\nStderr: ${stderrOutput}`);
-    }
-    throw err;
-  } finally {
-    signal?.removeEventListener("abort", onAbort);
-    eventLogger?.log("session_end", { stopReason, sessionId });
-    eventLogger?.close();
-    // Clean up the agent process
-    if (!agentProcess.killed) {
-      agentProcess.kill("SIGTERM");
-      setTimeout(() => {
-        if (!agentProcess.killed) {
-          agentProcess.kill("SIGKILL");
+      switch (type) {
+        case "system": {
+          // System events: init, hook_started, hook_response
+          if (event.subtype === "init") {
+            sessionId = event.session_id;
+          }
+          break;
         }
-      }, 5000);
-    }
-  }
 
-  return {
-    result: resultText,
-    sessionId,
-    usage: {
-      inputTokens: usageData?.inputTokens || 0,
-      outputTokens: usageData?.outputTokens || 0,
-      costUsd,
-    },
-    stopReason,
-  };
+        case "assistant": {
+          // Assistant message with content blocks
+          const message = event.message;
+          if (!message?.content) break;
+
+          for (const block of message.content) {
+            if (block.type === "text") {
+              resultText += block.text;
+              await onUpdate?.({
+                type: "text",
+                data: { text: block.text },
+              });
+            } else if (block.type === "thinking") {
+              await onUpdate?.({
+                type: "thought",
+                data: { text: block.thinking || block.text || "" },
+              });
+            } else if (block.type === "tool_use") {
+              // Emit tool_call event with detailed info
+              await onUpdate?.({
+                type: "tool_call",
+                data: {
+                  title: block.name,
+                  toolUseId: block.id,
+                  rawInput: block.input,
+                  status: "running",
+                },
+              });
+            } else if (block.type === "tool_result") {
+              const resultContent = Array.isArray(block.content)
+                ? block.content.map((c: any) => c.text || "").join("\n")
+                : typeof block.content === "string"
+                  ? block.content
+                  : JSON.stringify(block.content);
+              await onUpdate?.({
+                type: "tool_call_update",
+                data: {
+                  toolUseId: block.tool_use_id,
+                  result: resultContent,
+                  isError: block.is_error,
+                  status: block.is_error ? "error" : "completed",
+                },
+              });
+            }
+          }
+          break;
+        }
+
+        case "user": {
+          // User message echoed back — contains tool results from executed tools
+          const message = event.message;
+          if (!message?.content) break;
+
+          for (const block of message.content) {
+            if (block.type === "tool_result") {
+              let resultContent: string;
+              if (Array.isArray(block.content)) {
+                resultContent = block.content
+                  .map((c: any) => c.text || "")
+                  .join("\n");
+              } else if (typeof block.content === "string") {
+                resultContent = block.content;
+              } else {
+                resultContent = JSON.stringify(block.content);
+              }
+
+              await onUpdate?.({
+                type: "tool_call_update",
+                data: {
+                  toolUseId: block.tool_use_id,
+                  result: resultContent,
+                  isError: block.is_error || false,
+                  status: block.is_error ? "error" : "completed",
+                },
+              });
+            }
+          }
+          break;
+        }
+
+        case "result": {
+          // End of turn - extract final results
+          stopReason = event.stop_reason || "end_turn";
+          costUsd = event.total_cost_usd || 0;
+
+          // Extract usage from result
+          if (event.usage) {
+            inputTokens = event.usage.input_tokens || 0;
+            outputTokens = event.usage.output_tokens || 0;
+          }
+
+          // Also check modelUsage for token counts
+          if (event.modelUsage) {
+            for (const [, usage] of Object.entries(event.modelUsage as Record<string, any>)) {
+              if (usage) {
+                inputTokens = usage.inputTokens || inputTokens;
+                outputTokens = usage.outputTokens || outputTokens;
+              }
+            }
+          }
+          break;
+        }
+      }
+    });
+
+    rl.on("close", () => {
+      signal?.removeEventListener("abort", onAbort);
+      eventLogger?.log("session_end", { stopReason, sessionId });
+      eventLogger?.close();
+
+      resolve({
+        result: resultText,
+        sessionId,
+        usage: {
+          inputTokens,
+          outputTokens,
+          costUsd,
+        },
+        stopReason,
+      });
+    });
+
+    rl.on("error", (err) => {
+      signal?.removeEventListener("abort", onAbort);
+      eventLogger?.log("error", { message: err.message });
+      eventLogger?.close();
+
+      if (!agentProcess.killed) {
+        agentProcess.kill("SIGTERM");
+      }
+
+      reject(new Error(`Stream error: ${err.message}\nStderr: ${stderrOutput}`));
+    });
+
+    agentProcess.on("error", (err) => {
+      signal?.removeEventListener("abort", onAbort);
+      eventLogger?.log("error", { message: err.message });
+      eventLogger?.close();
+
+      reject(new Error(`Agent process error: ${err.message}\nStderr: ${stderrOutput}`));
+    });
+
+    agentProcess.on("exit", (code) => {
+      if (code !== 0 && !signal?.aborted) {
+        // Process exited with error before we got results
+        // This will be handled by rl.on('close') if we already have results
+        if (!resultText) {
+          signal?.removeEventListener("abort", onAbort);
+          eventLogger?.close();
+          reject(new Error(`Agent exited with code ${code}\nStderr: ${stderrOutput}`));
+        }
+      }
+    });
+  });
 }
 
 /**
- * Run an ACP query with streaming text output.
+ * Run a query with streaming text output.
  * Yields text chunks as they arrive from the agent.
  */
 export async function* acpStreamQuery(
@@ -317,154 +335,109 @@ export async function* acpStreamQuery(
     systemPrompt,
     agent = DEFAULT_AGENT,
     env,
-    onPermission,
     signal,
   } = options;
 
-  // Spawn the agent CLI process
-  const agentProcess = spawn(agent.command, agent.args, {
+  const fullPrompt = systemPrompt
+    ? `${systemPrompt}\n\n---\n\n${prompt}`
+    : prompt;
+
+  const args = [...agent.args, fullPrompt];
+  const agentProcess = spawn(agent.command, args, {
     cwd,
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, ...env, FORCE_COLOR: "0" },
   });
 
+  // Close stdin so Claude starts processing immediately
+  agentProcess.stdin?.end();
+
   agentProcess.stderr?.on("data", () => {});
 
-  const input = Writable.toWeb(agentProcess.stdin!) as WritableStream<Uint8Array>;
-  const output = Readable.toWeb(agentProcess.stdout!) as ReadableStream<Uint8Array>;
-  const acpStream = ndJsonStream(input, output);
-
-  // Use a queue to yield text chunks from the callback
-  const textQueue: string[] = [];
   const state = {
-    resolveWaiting: null as (() => void) | null,
-    done: false,
-    finalUsage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
-    finalStopReason: "end_turn",
+    inputTokens: 0,
+    outputTokens: 0,
+    costUsd: 0,
+    stopReason: "end_turn",
+    sessionId: undefined as string | undefined,
   };
 
   let eventLogger: ACPEventLogger | null = null;
 
-  const client: Client = {
-    async requestPermission(params) {
-      eventLogger?.log("permission_request", params);
-      if (onPermission) {
-        return onPermission(params);
-      }
-      const allowAlways = params.options.find((o) => o.kind === "allow_always");
-      const allowOnce = params.options.find((o) => o.kind === "allow_once");
-      const selected = allowAlways || allowOnce || params.options[0];
-      return {
-        outcome: { outcome: "selected", optionId: selected.optionId },
-      };
-    },
+  const rl = readline.createInterface({
+    input: agentProcess.stdout!,
+    crlfDelay: Infinity,
+  });
 
-    async sessionUpdate(params: SessionNotification) {
-      const update = params.update;
-      eventLogger?.log(update.sessionUpdate, update);
-      if (update.sessionUpdate === "agent_message_chunk" && update.content.type === "text") {
-        textQueue.push(update.content.text);
-        state.resolveWaiting?.();
-      }
-      if (update.sessionUpdate === "usage_update" && update.cost) {
-        state.finalUsage.costUsd = update.cost.amount;
-      }
-    },
+  const onAbort = () => {
+    if (!agentProcess.killed) {
+      agentProcess.kill("SIGTERM");
+    }
   };
+  signal?.addEventListener("abort", onAbort, { once: true });
 
-  const connection = new ClientSideConnection((_agent) => client, acpStream);
+  // Use async iteration over readline
+  for await (const line of rl) {
+    if (!line.trim()) continue;
 
-  // Run the prompt in a separate async context
-  const promptPromise = (async () => {
-    let sessionId: string | undefined;
+    let event: any;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
 
-    // Set up abort handler
-    const onAbort = async () => {
-      if (sessionId) {
-        try {
-          eventLogger?.log("cancel", { sessionId });
-          await connection.cancel({ sessionId });
-        } catch {
-          // Agent may already be gone
+    if (event.session_id && !state.sessionId) {
+      state.sessionId = event.session_id;
+      eventLogger = new ACPEventLogger(config.workDir, state.sessionId as string);
+      eventLogger.log("session_start", { agentCommand: agent.command, cwd, streaming: true });
+    }
+
+    eventLogger?.log("stream_event", event);
+
+    if (event.type === "assistant" && event.message?.content) {
+      for (const block of event.message.content) {
+        if (block.type === "text" && block.text) {
+          yield { text: block.text, done: false };
         }
       }
-      if (!agentProcess.killed) {
-        agentProcess.kill("SIGTERM");
-      }
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-
-    try {
-      await connection.initialize({
-        protocolVersion: PROTOCOL_VERSION,
-        clientCapabilities: {},
-      });
-
-      const sessionResult = await connection.newSession({
-        cwd,
-        mcpServers: [],
-      });
-      sessionId = sessionResult.sessionId;
-
-      eventLogger = new ACPEventLogger(config.workDir, sessionId);
-      eventLogger.log("session_start", { agentCommand: agent.command, cwd, streaming: true });
-
-      if (signal?.aborted) {
-        throw new Error("Query was cancelled");
-      }
-
-      const fullPrompt = systemPrompt
-        ? `${systemPrompt}\n\n---\n\n${prompt}`
-        : prompt;
-
-      const promptResult = await connection.prompt({
-        sessionId: sessionResult.sessionId,
-        prompt: [{ type: "text", text: fullPrompt }],
-      });
-
-      state.finalStopReason = promptResult.stopReason;
-      if (promptResult.usage) {
-        state.finalUsage.inputTokens = promptResult.usage.inputTokens;
-        state.finalUsage.outputTokens = promptResult.usage.outputTokens;
-      }
-    } finally {
-      signal?.removeEventListener("abort", onAbort);
-      state.done = true;
-      state.resolveWaiting?.();
-      eventLogger?.log("session_end", { stopReason: state.finalStopReason });
-      eventLogger?.close();
-      if (!agentProcess.killed) {
-        agentProcess.kill("SIGTERM");
-      }
-    }
-  })();
-
-  // Yield text chunks as they arrive
-  while (true) {
-    while (textQueue.length > 0) {
-      yield { text: textQueue.shift()!, done: false as const };
     }
 
-    if (state.done) break;
-
-    // Wait for next text chunk
-    await new Promise<void>((resolve) => {
-      state.resolveWaiting = resolve;
-    });
+    if (event.type === "result") {
+      state.stopReason = event.stop_reason || "end_turn";
+      state.costUsd = event.total_cost_usd || 0;
+      if (event.usage) {
+        state.inputTokens = event.usage.input_tokens || 0;
+        state.outputTokens = event.usage.output_tokens || 0;
+      }
+      if (event.modelUsage) {
+        for (const [, usage] of Object.entries(event.modelUsage as Record<string, any>)) {
+          if (usage) {
+            state.inputTokens = usage.inputTokens || state.inputTokens;
+            state.outputTokens = usage.outputTokens || state.outputTokens;
+          }
+        }
+      }
+    }
   }
 
-  // Drain remaining chunks
-  while (textQueue.length > 0) {
-    yield { text: textQueue.shift()!, done: false as const };
-  }
+  signal?.removeEventListener("abort", onAbort);
+  eventLogger?.log("session_end", { stopReason: state.stopReason });
+  eventLogger?.close();
 
-  await promptPromise;
+  if (!agentProcess.killed) {
+    agentProcess.kill("SIGTERM");
+  }
 
   yield {
     text: "",
-    done: true as const,
-    usage: state.finalUsage,
-    stopReason: state.finalStopReason,
+    done: true,
+    usage: {
+      inputTokens: state.inputTokens,
+      outputTokens: state.outputTokens,
+      costUsd: state.costUsd,
+    },
+    stopReason: state.stopReason,
   };
 }
 
@@ -475,13 +448,13 @@ export async function* acpStreamQuery(
 export function resolveAgentConfig(agentId?: string): AgentConfig {
   switch (agentId) {
     case "codex":
-      return { command: "codex", args: [] };
+      return { command: "codex", args: ["exec", "--output-format", "stream-json", "--skip-permissions-unsafe"] };
     case "gemini":
       return { command: "gemini", args: [] };
     case "aider":
       return { command: "aider", args: ["--no-auto-commits"] };
     case "amp":
-      return { command: "amp", args: [] };
+      return { command: "amp", args: ["-y", "@sourcegraph/amp@latest", "--execute", "--stream-json"] };
     case "claude-code":
     default:
       return DEFAULT_AGENT;
